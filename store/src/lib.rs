@@ -1,28 +1,30 @@
+use diesel::{Connection, ConnectionError, PgConnection};
+use crate::config::Config;
+
+pub mod config;
+pub mod schema;
+pub mod models;
 pub struct  Store {
-   conn : Connection
+  pub  conn : PgConnection
 }
-
-
-
-impl  Default for Store {
-
-     fn default() -> Self {
-
-
-        Store {
-            conn     
-        }
-    }
-}
-
-
 
 impl  Store {
-    pub fn create_user(&self){
+
+   pub fn default() -> Result<Self , ConnectionError > {
+        let config = Config::default();
+         let connection = PgConnection::establish(&config.db_url)?;
+        Ok(Self {
+            conn : connection
+        })
+    }
+
+      pub fn create_user(&self){
         print!("crated user")
     }
 
-    pub fn create_website(&self) -> String{
+
+     pub fn create_website(&self) -> String{
         format!("created Website")
-    }
+    }    
 }
+
