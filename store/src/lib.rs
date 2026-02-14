@@ -15,6 +15,3 @@ impl Store {
         Ok(Self { conn: connection })
     }
 }
-
-
-

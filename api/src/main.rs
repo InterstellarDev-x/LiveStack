@@ -97,8 +97,8 @@ async fn main() -> Result<(), std::io::Error> {
     let app = Route::new()
         .at("/website/:website_id", get(get_website))
         .at("/website", post(create_website))
-        .at("/signup" , post(signup))
-        .at("/signin" , post(signin));
+        .at("/signup", post(signup))
+        .at("/signin", post(signin));
 
     Server::new(TcpListener::bind("0.0.0.0:3000"))
         .name("hello-world") // give it a name to server
