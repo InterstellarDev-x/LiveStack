@@ -1,56 +1,73 @@
-use diesel::{ExpressionMethods, RunQueryDsl, Selectable, SelectableHelper, prelude::{Insertable, Queryable}, query_dsl::methods::{FilterDsl, SelectDsl}};
-
 use crate::Store;
+use diesel::prelude::*;
 
-#[derive(Queryable, Selectable , Insertable)]
+#[derive(Queryable, Selectable, Insertable)]
 #[diesel(table_name = crate::schema::user)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct User {
-   pub   id : String,
-   pub  username : String,
-   pub  password : String
+    pub id: String,
+    pub username: String,
+    pub password: String,
 }
 
+use uuid::Uuid;
 
+impl Store {
+    pub fn create_user(
+        &mut self,
+        input_username: String,
+        input_paasword: String,
+    ) -> Result<User, diesel::result::Error> {
+        let user_id = Uuid::new_v4().to_string();
 
+        let new_user = User {
+            id: user_id,
+            username: input_username,
+            password: input_paasword,
+        };
 
- impl  Store  {
-   pub fn signp (&mut self , username : String , password : String)  -> Result<User , diesel::result::Error> {
-      
-      let id = String::from("id");
-      let u = User {
-         id,
-         username,
-         password
-      };  
-      use crate::schema::user;
-      let response = diesel::insert_into(user::table)
-                           .values(&u)
-                           .returning(User::as_returning()).get_result(&mut self.conn)?;
+        let response = diesel::insert_into(crate::schema::user::table)
+            .values(&new_user)
+            .returning(User::as_returning())
+            .get_result(&mut self.conn)?;
 
+        Ok(response)
+    }
 
-      Ok(response)
-   }
+    pub fn is_user_exist(
+        &mut self,
+        input_username: &String,
+    ) -> Result<bool, diesel::result::Error> {
+        use crate::schema::user::dsl::*;
 
+        let user_result = user
+            .filter(username.eq(input_username))
+            .select(User::as_select())
+            .first(&mut self.conn)
+            .optional()?;
 
-pub fn sign_in(&mut self , input_username : String, input_password : String) -> Result<bool , diesel::result::Error>{
-   
-    use crate::schema::user::dsl::*;
+        Ok(match user_result {
+            Some(_u) => true,
+            None => false,
+        })
+    }
 
-   let user_result  =   user
-                              .filter(username.eq(input_username))
-                              .select(User::as_select())
-                              .first(&mut self.conn)?;
+    pub fn is_exist_and_password_match(
+        &mut self,
+        input_username: &String,
+        input_paasword: &String,
+    ) -> Result<bool, diesel::result::Error> {
+        use crate::schema::user::dsl::*;
 
-   if user_result.password != input_password {
-      return Ok(false);
-   }
+        let user_result = user
+            .filter(username.eq(input_username))
+            .select(User::as_select())
+            .first(&mut self.conn)
+            .optional()?;
 
-   return Ok(true);
-
+        Ok(match user_result {
+            Some(u) => u.password == *input_paasword,
+            None => false,
+        })
+    }
 }
-}
-
-
-
-
