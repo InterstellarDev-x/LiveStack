@@ -13,7 +13,7 @@ pub fn get_website(Path(website_id): Path<String>) -> String {
 
 #[handler]
 pub fn create_website(Json(data): Json<CreateWebsiteInput>) -> Json<CreateWebsiteOutput> {
-    let store = Store::default().unwrap();
+    let _store = Store::default().unwrap();
     let response = CreateWebsiteOutput { id: data.url };
 
     return Json(response);

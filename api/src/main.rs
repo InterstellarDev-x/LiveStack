@@ -18,7 +18,11 @@ async fn main() -> Result<(), std::io::Error> {
         .at("/signin", post(signin));
 
     Server::new(TcpListener::bind("0.0.0.0:3000"))
-        .name("hello-world") // give it a name to server
+        .name("LiveStack Server") // give it a name to server
         .run(app) // this
         .await
 }
+
+
+
+
