@@ -11,6 +11,10 @@ CREATE TABLE "website" (
     CONSTRAINT "Website_pkey" PRIMARY KEY ("id")
 );
 
+
+
+
+
 -- CreateTable
 CREATE TABLE "region" (
     "id" TEXT NOT NULL,

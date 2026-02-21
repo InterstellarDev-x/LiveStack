@@ -1,6 +1,6 @@
 use crate::Store;
 use chrono::{NaiveDateTime, Utc};
-use diesel::{ prelude::*};
+use diesel::prelude::*;
 
 use uuid::Uuid;
 #[derive(Queryable, Selectable, Insertable)]
@@ -77,10 +77,14 @@ impl Store {
         return Ok(updated_site);
     }
 
-
-    pub fn get_websites_by_user_id(&mut self , input_user_id: String) -> Result<Vec<Website> , diesel::result::Error> {
-           use crate::schema::website::dsl::*;
-           let response = website.filter(user_id.eq(input_user_id)).load::<Website>(&mut self.conn)?;
-           return Ok(response);
+    pub fn get_websites_by_user_id(
+        &mut self,
+        input_user_id: String,
+    ) -> Result<Vec<Website>, diesel::result::Error> {
+        use crate::schema::website::dsl::*;
+        let response = website
+            .filter(user_id.eq(input_user_id))
+            .load::<Website>(&mut self.conn)?;
+        return Ok(response);
     }
 }
