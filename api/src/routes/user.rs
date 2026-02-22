@@ -4,13 +4,15 @@ use crate::{
     types::request_input::SigninInput,
     types::request_output::{SignInpOutput, SignUpOutput},
 };
-use poem::{handler, web::Data};
 use poem::web::Json;
+use poem::{handler, web::Data};
 use store::Store;
 
 #[handler]
-pub fn signup(Json(data): Json<SigninInput> , Data(store) : Data<&Arc<Mutex<Store>>>) -> Json<SignUpOutput> {
-    
+pub fn signup(
+    Json(data): Json<SigninInput>,
+    Data(store): Data<&Arc<Mutex<Store>>>,
+) -> Json<SignUpOutput> {
     let mut locked_store = store.lock().unwrap();
 
     match locked_store.is_user_exist(&data.username) {
@@ -46,7 +48,10 @@ pub fn signup(Json(data): Json<SigninInput> , Data(store) : Data<&Arc<Mutex<Stor
 }
 
 #[handler]
-pub fn signin(Json(data): Json<SigninInput>, Data(store) : Data<&Arc<Mutex<Store>>>) -> Json<SignInpOutput> {
+pub fn signin(
+    Json(data): Json<SigninInput>,
+    Data(store): Data<&Arc<Mutex<Store>>>,
+) -> Json<SignInpOutput> {
     let mut store = store.lock().unwrap();
 
     match store.is_exist_and_password_match(&data.username, &data.password) {
@@ -72,6 +77,3 @@ pub fn signin(Json(data): Json<SigninInput>, Data(store) : Data<&Arc<Mutex<Store
         }
     }
 }
-
-
-
