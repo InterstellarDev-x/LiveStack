@@ -2,7 +2,8 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
 pub struct CreateWebsiteOutput {
-    pub id: String,
+    pub success : bool,
+    pub id: String
 }
 
 #[derive(Serialize, Deserialize)]
