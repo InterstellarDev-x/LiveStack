@@ -7,6 +7,23 @@ pub struct CreateWebsiteOutput {
 }
 
 #[derive(Serialize, Deserialize)]
+pub struct WebsiteOutput {
+    pub id: String,
+    pub url: String,
+    pub user_id: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct DeleteWebsiteOutput {
+    pub success: bool,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct WebsitesByUserOutput {
+    pub websites: Vec<WebsiteOutput>,
+}
+
+#[derive(Serialize, Deserialize)]
 pub struct SignUpOutput {
     pub success: bool,
     pub message: String,

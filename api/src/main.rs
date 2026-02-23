@@ -1,11 +1,13 @@
 use std::sync::{Arc, Mutex};
 
-use poem::{EndpointExt, Route, Server, get, listener::TcpListener, post};
+use poem::{get, listener::TcpListener, post, EndpointExt, Route, Server};
 use store::Store;
 
 use crate::{
     routes::user::{signin, signup},
-    routes::website::{create_website, get_website},
+    routes::website::{
+        create_website, delete_website, get_website, get_websites_by_user, update_website,
+    },
 };
 
 pub mod routes;
@@ -17,8 +19,12 @@ async fn main() -> Result<(), std::io::Error> {
 
     // specify the business logic
     let app = Route::new()
-        .at("/website/:website_id", get(get_website))
+        .at(
+            "/website/:website_id",
+            get(get_website).put(update_website).delete(delete_website),
+        )
         .at("/website", post(create_website))
+        .at("/websites/:user_id", get(get_websites_by_user))
         .at("/signup", post(signup))
         .at("/signin", post(signin))
         .data(arched_store);
