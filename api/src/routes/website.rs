@@ -7,12 +7,11 @@ use crate::types::{
     },
 };
 use poem::{
-    handler,
+    Error, handler,
     http::StatusCode,
     web::{Data, Json, Path},
-    Error,
 };
-use store::{models::website::Website, Store};
+use store::{Store, models::website::Website};
 
 fn map_website_to_output(website: Website) -> WebsiteOutput {
     WebsiteOutput {

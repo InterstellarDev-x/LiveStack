@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex};
 
-use poem::{get, listener::TcpListener, post, EndpointExt, Route, Server};
+use poem::{EndpointExt, Route, Server, get, listener::TcpListener, post};
 use store::Store;
 
 use crate::{
@@ -8,8 +8,10 @@ use crate::{
     routes::website::{
         create_website, delete_website, get_website, get_websites_by_user, update_website,
     },
-};
 
+    middleware::auth::log
+};
+pub  mod middleware;
 pub mod routes;
 pub mod types;
 
@@ -21,9 +23,9 @@ async fn main() -> Result<(), std::io::Error> {
     let app = Route::new()
         .at(
             "/website/:website_id",
-            get(get_website).put(update_website).delete(delete_website),
+            get(get_website).put(update_website).delete(delete_website).around(log)
         )
-        .at("/website", post(create_website))
+        .at("/website", post(create_website).around(log))
         .at("/websites/:user_id", get(get_websites_by_user))
         .at("/signup", post(signup))
         .at("/signin", post(signin))
