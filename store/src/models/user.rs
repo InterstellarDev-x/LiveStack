@@ -54,20 +54,16 @@ impl Store {
 
     pub fn is_exist_and_password_match(
         &mut self,
-        input_username: &String,
-        input_paasword: &String,
-    ) -> Result<bool, diesel::result::Error> {
+        input_username: &String
+    ) -> Result<User, diesel::result::Error> {
         use crate::schema::user::dsl::*;
 
         let user_result = user
             .filter(username.eq(input_username))
             .select(User::as_select())
-            .first(&mut self.conn)
-            .optional()?;
+            .first(&mut self.conn)?;
 
-        Ok(match user_result {
-            Some(u) => u.password == *input_paasword,
-            None => false,
-        })
+            
+        return Ok(user_result);
     }
 }

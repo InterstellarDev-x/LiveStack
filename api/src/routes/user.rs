@@ -1,4 +1,7 @@
-use std::sync::{Arc, Mutex};
+use std::{
+    sync::{Arc, Mutex},
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use crate::{
     types::request_input::SigninInput,
@@ -13,6 +16,7 @@ use store::Store;
 #[derive(Debug, Serialize, Deserialize)]
 struct Claims {
     user_id: String,
+    exp: u64,
 }
 
 #[handler]
@@ -70,7 +74,14 @@ pub fn signin(
                     if u.password != data.password {
                         return Err(Error::from_status(StatusCode::UNAUTHORIZED));
                     }
-                    let claim = Claims { user_id: u.id };
+
+                    let exp = SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .unwrap()
+                        .as_secs()
+                        + 36000; // testing purpose
+
+                    let claim = Claims { user_id: u.id, exp };
                     let key = b"fdfad"; // should be stored in env file
                     let token =
                         match encode(&Header::default(), &claim, &EncodingKey::from_secret(key)) {

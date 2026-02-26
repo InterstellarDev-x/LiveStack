@@ -25,11 +25,11 @@ async fn main() -> Result<(), std::io::Error> {
             "/website/:website_id",
             get(get_website).put(update_website).delete(delete_website).around(log)
         )
-        .at("/website", post(create_website).around(log))
+        .at("/website", post(create_website))
         .at("/websites/:user_id", get(get_websites_by_user))
         .at("/signup", post(signup))
         .at("/signin", post(signin))
-        .data(arched_store);
+        .data(arched_store).around(log);
 
     Server::new(TcpListener::bind("0.0.0.0:3000"))
         .name("LiveStack Server") // give it a name to server
