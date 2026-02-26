@@ -2,6 +2,7 @@ use std::sync::{Arc, Mutex};
 
 use poem::{EndpointExt, Route, Server, get, listener::TcpListener, post};
 use store::Store;
+use messaging::redis_main;
 
 use crate::{
     routes::user::{signin, signup},
@@ -15,8 +16,11 @@ pub  mod middleware;
 pub mod routes;
 pub mod types;
 
+
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> Result<(), std::io::Error> {
+
+    redis_main();
     let arched_store = Arc::new(Mutex::new(Store::default().unwrap()));
 
     // specify the business logic
