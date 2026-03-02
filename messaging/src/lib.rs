@@ -1,9 +1,7 @@
-use redis::streams::{self, StreamId, StreamKey, StreamMaxlen, StreamReadOptions, StreamReadReply};
+use redis::streams::{ StreamId, StreamKey, StreamMaxlen, StreamReadOptions, StreamReadReply};
 use redis::{Commands, RedisResult, Value};
-use std::time::{SystemTime, UNIX_EPOCH};
 const BETTERUPTIME: &str = "better-uptime";
 const STREAMS: &[&str] = &[BETTERUPTIME];
-
 pub mod config;
 pub mod pool;
 
@@ -24,7 +22,7 @@ pub fn add_records(client: &redis::Client) -> RedisResult<()> {
 
     let maxlen = StreamMaxlen::Approx(1000);
 
-    // a stream whose records have two fields
+   // a stream whose records have two fields
     for _ in 0..1 {
         let _: () = con.xadd_maxlen(
             BETTERUPTIME,
@@ -52,16 +50,7 @@ pub fn add_records(client: &redis::Client) -> RedisResult<()> {
 
 
 
-/// Generate a potentially unique value.
-fn arbitrary_value() -> String {
-    format!(
-        "{}",
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("Time travel")
-            .as_nanos()
-    )
-}
+
 
 
 /// Block the thread for this many milliseconds while
@@ -88,9 +77,11 @@ fn read_records(client: &redis::Client) -> RedisResult<()> {
         .xread_options(STREAMS, &[starting_id, another_form, starting_id], &opts)
         .expect("read");
 
+    println!("{:?}" , srr);
+
     for StreamKey { key, ids } in srr.keys {
         println!("Stream {key}");
-        for StreamId { id, map, .. } in ids {
+        for StreamId { id, map ,..} in ids {
             println!("\tID {id}");
             for (n, s) in map {
                 if let Value::BulkString(bytes) = s {
