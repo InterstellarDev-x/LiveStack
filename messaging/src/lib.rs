@@ -1,4 +1,4 @@
-use redis::streams::{StreamId, StreamKey, StreamMaxlen, StreamReadOptions, StreamReadReply};
+use redis::streams::{self, StreamId, StreamKey, StreamMaxlen, StreamReadOptions, StreamReadReply};
 use redis::{Commands, RedisResult, Value};
 use std::time::{SystemTime, UNIX_EPOCH};
 const BETTERUPTIME: &str = "better-uptime";
@@ -25,27 +25,29 @@ pub fn add_records(client: &redis::Client) -> RedisResult<()> {
     let maxlen = StreamMaxlen::Approx(1000);
 
     // a stream whose records have two fields
-    for _ in 0..thrifty_rand() {
+    for _ in 0..1 {
         let _: () = con.xadd_maxlen(
             BETTERUPTIME,
-            maxlen,
+            maxlen , // how many latest entries should we keep in redis while adding 
             "*",
-            &[("bark", arbitrary_value()), ("groom", arbitrary_value())],
+            &[("url", String::from("www.google.com")), ("url", "www.facebook.com".into())],
+        )?;
+    }
+      for _ in 0..1 {
+        let _: () = con.xadd_maxlen(
+            BETTERUPTIME,
+            maxlen , // how many latest entries should we keep in redis while adding 
+            "*",
+            &[("url", String::from("www.google.com")), ("url", "www.facebook.com".into())],
         )?;
     }
 
-    Ok(())
-}
+    let len : usize  = con.xlen(BETTERUPTIME).unwrap();
 
-/// An approximation of randomness, without leaving the stdlib.
-fn thrifty_rand() -> u8 {
-    let penultimate_num = 2;
-    (SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("Time travel")
-        .as_nanos()
-        % penultimate_num) as u8
-        + 1
+    // println!("{}" , con.xlen::<_, usize>(STREAMS[0]).unwrap());
+    println!("thie size is {}" , len);
+
+    Ok(())
 }
 
 
@@ -60,6 +62,7 @@ fn arbitrary_value() -> String {
             .as_nanos()
     )
 }
+
 
 /// Block the thread for this many milliseconds while
 /// waiting for data to arrive on the stream.
