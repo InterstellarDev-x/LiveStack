@@ -4,8 +4,6 @@
 //     add_records()
 // }
 
-
-
-fn main(){
+fn main() {
     println!("will implement standalone producer")
 }

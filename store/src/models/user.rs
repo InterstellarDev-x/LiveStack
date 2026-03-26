@@ -54,7 +54,7 @@ impl Store {
 
     pub fn is_exist_and_password_match(
         &mut self,
-        input_username: &String
+        input_username: &String,
     ) -> Result<User, diesel::result::Error> {
         use crate::schema::user::dsl::*;
 
@@ -63,7 +63,6 @@ impl Store {
             .select(User::as_select())
             .first(&mut self.conn)?;
 
-            
         return Ok(user_result);
     }
 }

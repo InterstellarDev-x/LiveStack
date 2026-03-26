@@ -1,11 +1,9 @@
-use redis::streams::{ StreamId, StreamKey, StreamMaxlen, StreamReadOptions, StreamReadReply};
+use redis::streams::{StreamId, StreamKey, StreamMaxlen, StreamReadOptions, StreamReadReply};
 use redis::{Commands, RedisResult, Value};
 const BETTERUPTIME: &str = "better-uptime";
 const STREAMS: &[&str] = &[BETTERUPTIME];
 pub mod config;
 pub mod pool;
-
-
 
 pub fn redis_main() {
     let client = redis::Client::open("redis://127.0.0.1/").expect("client");
@@ -16,42 +14,42 @@ pub fn redis_main() {
     clean_up(&client)
 }
 
-
 pub fn add_records(client: &redis::Client) -> RedisResult<()> {
     let mut con = client.get_connection().expect("conn");
 
     let maxlen = StreamMaxlen::Approx(1000);
 
-   // a stream whose records have two fields
+    // a stream whose records have two fields
     for _ in 0..1 {
         let _: () = con.xadd_maxlen(
             BETTERUPTIME,
-            maxlen , // how many latest entries should we keep in redis while adding 
+            maxlen, // how many latest entries should we keep in redis while adding
             "*",
-            &[("url", String::from("www.google.com")), ("url", "www.facebook.com".into())],
+            &[
+                ("url", String::from("www.google.com")),
+                ("url", "www.facebook.com".into()),
+            ],
         )?;
     }
-      for _ in 0..1 {
+    for _ in 0..1 {
         let _: () = con.xadd_maxlen(
             BETTERUPTIME,
-            maxlen , // how many latest entries should we keep in redis while adding 
+            maxlen, // how many latest entries should we keep in redis while adding
             "*",
-            &[("url", String::from("www.google.com")), ("url", "www.facebook.com".into())],
+            &[
+                ("url", String::from("www.google.com")),
+                ("url", "www.facebook.com".into()),
+            ],
         )?;
     }
 
-    let len : usize  = con.xlen(BETTERUPTIME).unwrap();
+    let len: usize = con.xlen(BETTERUPTIME).unwrap();
 
     // println!("{}" , con.xlen::<_, usize>(STREAMS[0]).unwrap());
-    println!("thie size is {}" , len);
+    println!("thie size is {}", len);
 
     Ok(())
 }
-
-
-
-
-
 
 /// Block the thread for this many milliseconds while
 /// waiting for data to arrive on the stream.
@@ -77,11 +75,11 @@ fn read_records(client: &redis::Client) -> RedisResult<()> {
         .xread_options(STREAMS, &[starting_id, another_form, starting_id], &opts)
         .expect("read");
 
-    println!("{:?}" , srr);
+    println!("{:?}", srr);
 
     for StreamKey { key, ids } in srr.keys {
         println!("Stream {key}");
-        for StreamId { id, map ,..} in ids {
+        for StreamId { id, map, .. } in ids {
             println!("\tID {id}");
             for (n, s) in map {
                 if let Value::BulkString(bytes) = s {
@@ -96,10 +94,7 @@ fn read_records(client: &redis::Client) -> RedisResult<()> {
     Ok(())
 }
 
-
-
 const GROUP_NAME: &str = "example-group-aaa";
-
 
 fn clean_up(client: &redis::Client) {
     let mut con = client.get_connection().expect("con");

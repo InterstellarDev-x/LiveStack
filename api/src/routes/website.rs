@@ -7,7 +7,9 @@ use crate::types::{
     },
 };
 use poem::{
-    Error, Request, handler, http::StatusCode, web::{Data, Json, Path}
+    Error, Request, handler,
+    http::StatusCode,
+    web::{Data, Json, Path},
 };
 use store::{Store, models::website::Website};
 
@@ -19,9 +21,8 @@ fn map_website_to_output(website: Website) -> WebsiteOutput {
     }
 }
 
-
 #[derive(Debug)]
-struct  UserId(String);
+struct UserId(String);
 
 #[handler]
 pub fn get_website(
@@ -40,16 +41,16 @@ pub fn get_website(
 #[handler]
 pub fn create_website(
     Json(data): Json<CreateWebsiteInput>,
-    Data(store): Data<&Arc<Mutex<Store>>>, req : &Request
+    Data(store): Data<&Arc<Mutex<Store>>>,
+    req: &Request,
 ) -> Result<Json<CreateWebsiteOutput>, Error> {
     let mut store = store.lock().unwrap();
     let user_id = req.extensions().get::<UserId>();
 
     match user_id {
         Some(u) => println!("{:?}", u),
-        None => println!("{}",2)
+        None => println!("{}", 2),
     }
-
 
     let response = store
         .create_website("fdsfad".into(), data.url)
@@ -59,7 +60,7 @@ pub fn create_website(
         success: true,
         id: response.id,
     };
-    
+
     Ok(Json(new_website))
 }
 
