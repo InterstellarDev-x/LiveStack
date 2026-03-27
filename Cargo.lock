@@ -1366,6 +1366,7 @@ dependencies = [
  "dotenvy",
  "openssl-sys",
  "pq-sys",
+ "serde",
  "uuid",
 ]
 

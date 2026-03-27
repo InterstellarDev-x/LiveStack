@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use store::{NaiveDateTime};
+use store::{NaiveDateTime, models::website::WebsiteTick};
 
 #[derive(Serialize, Deserialize)]
 pub struct CreateWebsiteOutput {
@@ -7,25 +7,22 @@ pub struct CreateWebsiteOutput {
     pub id: String,
 }
 
-
-
-
-
-
-
 #[derive(Serialize, Deserialize)]
 pub struct WebsiteOutput {
     pub id: String,
     pub url: String,
     pub user_id: String,
     pub time_added: NaiveDateTime,
-
 }
 
-
-
-
-
+#[derive(Serialize, Deserialize)]
+pub struct WebsiteOutputWithTick {
+    pub id: String,
+    pub url: String,
+    pub user_id: String,
+    pub time_added: NaiveDateTime,
+    pub website_tick: Option<WebsiteTick>,
+}
 
 #[derive(Serialize, Deserialize)]
 pub struct DeleteWebsiteOutput {

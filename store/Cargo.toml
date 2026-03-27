@@ -11,3 +11,4 @@ openssl-sys = { version = "0.9.100", features = ["vendored"] }
 uuid = {version ="1.20.0" , features = ["v4"]}
 chrono = {version = "0.4.43", features = ["serde"]}
 diesel-derive-enum = {version ="2" , features = ["postgres"]}
+serde = { version = "1.0.228" , features = ["derive"]}

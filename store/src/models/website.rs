@@ -2,11 +2,12 @@ use crate::{Store, schema::sql_types::WebsiteStatus};
 use chrono::{NaiveDateTime, Utc};
 use diesel::prelude::*;
 use diesel_derive_enum::DbEnum;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 #[derive(Queryable, Selectable, Insertable)]
 #[diesel(table_name = crate::schema::website)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
-
+#[derive(Serialize, Deserialize)]
 pub struct Website {
     pub id: String,
     pub url: String,
@@ -14,8 +15,9 @@ pub struct Website {
     pub user_id: String,
 }
 
-#[derive(Debug , DbEnum)]
+#[derive(Debug, DbEnum)]
 #[ExistingTypePath = "WebsiteStatus"]
+#[derive(Serialize, Deserialize)]
 pub enum WebsiteStatusEnum {
     Up,
     Down,
@@ -25,7 +27,7 @@ pub enum WebsiteStatusEnum {
 #[derive(Queryable, Selectable, Insertable, Debug)]
 #[diesel(table_name = crate::schema::website_tick)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
-
+#[derive(Serialize, Deserialize)]
 pub struct WebsiteTick {
     pub id: String,
     pub response_time_ms: i32,
@@ -35,11 +37,10 @@ pub struct WebsiteTick {
     pub createdAt: NaiveDateTime,
 }
 
-
-
+#[derive(Serialize, Deserialize)]
 pub struct WebsiteWithLatestTick {
-   pub  website: Website,
-   pub  latest_tick: Option<WebsiteTick>,
+    pub website: Website,
+    pub latest_tick: Option<WebsiteTick>,
 }
 impl Store {
     pub fn create_website(
@@ -86,16 +87,16 @@ impl Store {
                 .optional()?;
         }
 
-  
-
-       match latest_ticks {
-        Some(latest) =>{
-            Ok(WebsiteWithLatestTick { website: website_result , latest_tick:  Some(latest) })
-        },
-        None => {
-           Ok(WebsiteWithLatestTick { website: website_result, latest_tick: None })
+        match latest_ticks {
+            Some(latest) => Ok(WebsiteWithLatestTick {
+                website: website_result,
+                latest_tick: Some(latest),
+            }),
+            None => Ok(WebsiteWithLatestTick {
+                website: website_result,
+                latest_tick: None,
+            }),
         }
-       }
     }
 
     pub fn delete_by_id(

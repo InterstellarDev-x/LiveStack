@@ -5,7 +5,8 @@ use crate::{
     types::{
         request_input::{CreateWebsiteInput, UpdateWebsiteInput},
         request_output::{
-            CreateWebsiteOutput, DeleteWebsiteOutput, WebsiteOutput, WebsitesByUserOutput,
+            CreateWebsiteOutput, DeleteWebsiteOutput, WebsiteOutput, WebsiteOutputWithTick,
+            WebsitesByUserOutput,
         },
     },
 };
@@ -14,17 +15,20 @@ use poem::{
     http::StatusCode,
     web::{Data, Json, Path},
 };
-use store::{Store, models::website::{ Website, WebsiteWithLatestTick}};
+use store::{
+    Store,
+    models::website::{Website, WebsiteWithLatestTick},
+};
 
-fn map_website_with_tick_to_output(website: WebsiteWithLatestTick) -> WebsiteOutput {
-    WebsiteOutput {
+fn map_website_with_tick_to_output(website: WebsiteWithLatestTick) -> WebsiteOutputWithTick {
+    WebsiteOutputWithTick {
         id: website.website.id,
         url: website.website.url,
         user_id: website.website.user_id,
         time_added: website.website.time_added,
+        website_tick: website.latest_tick,
     }
 }
-
 
 fn map_website_to_output(website: Website) -> WebsiteOutput {
     WebsiteOutput {
@@ -39,7 +43,7 @@ fn map_website_to_output(website: Website) -> WebsiteOutput {
 pub fn get_website(
     Path(website_id): Path<String>,
     Data(store): Data<&Arc<Mutex<Store>>>,
-) -> Result<Json<WebsiteOutput>, Error> {
+) -> Result<Json<WebsiteOutputWithTick>, Error> {
     let mut store = store.lock().unwrap();
 
     let website = store
