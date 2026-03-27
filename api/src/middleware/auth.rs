@@ -1,5 +1,5 @@
 use jsonwebtoken::{DecodingKey, Validation, decode, errors::ErrorKind};
-use poem::{Endpoint, Error, IntoResponse, Request, Response, Result, http::StatusCode};
+use poem::{Endpoint, Error, IntoResponse, Request, Response, Result, error::Unauthorized, http::StatusCode};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -23,7 +23,7 @@ pub async fn log<E: Endpoint>(next: E, mut req: Request) -> Result<Response, Err
     let token_data = match decode::<Claims>(token, &DecodingKey::from_secret(key), &validation) {
         Ok(c) => c,
         Err(err) => match *err.kind() {
-            ErrorKind::InvalidToken => panic!("Token is invalid"), // Example on how to handle a specific error
+            ErrorKind::InvalidToken => return Err(poem::Error::from_status(StatusCode::UNAUTHORIZED)), // Example on how to handle a specific error
             ErrorKind::InvalidIssuer => panic!("Issuer is invalid"), // Example on how to handle a specific error
             _ => panic!("Some other errors"),
         },

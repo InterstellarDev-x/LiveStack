@@ -16,7 +16,7 @@ pub struct Website {
 
 #[derive(Debug , DbEnum)]
 #[ExistingTypePath = "WebsiteStatus"]
-enum WebsiteStatusEnum {
+pub enum WebsiteStatusEnum {
     Up,
     Down,
     Unknown,

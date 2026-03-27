@@ -14,7 +14,17 @@ use poem::{
     http::StatusCode,
     web::{Data, Json, Path},
 };
-use store::{Store, models::website::Website};
+use store::{Store, models::website::{ Website, WebsiteWithLatestTick}};
+
+fn map_website_with_tick_to_output(website: WebsiteWithLatestTick) -> WebsiteOutput {
+    WebsiteOutput {
+        id: website.website.id,
+        url: website.website.url,
+        user_id: website.website.user_id,
+        time_added: website.website.time_added,
+    }
+}
+
 
 fn map_website_to_output(website: Website) -> WebsiteOutput {
     WebsiteOutput {
@@ -36,7 +46,7 @@ pub fn get_website(
         .get_website_by_id(website_id)
         .map_err(|_| Error::from_status(StatusCode::INTERNAL_SERVER_ERROR))?;
 
-    Ok(Json(map_website_to_output(website)))
+    Ok(Json(map_website_with_tick_to_output(website)))
 }
 
 #[handler]
