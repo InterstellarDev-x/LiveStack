@@ -17,7 +17,7 @@ pub mod types;
 
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> Result<(), std::io::Error> {
-    redis_main();
+    // redis_main();
     let arched_store = Arc::new(Mutex::new(Store::default().unwrap()));
 
     // specify the business logic
@@ -27,14 +27,13 @@ async fn main() -> Result<(), std::io::Error> {
             get(get_website)
                 .put(update_website)
                 .delete(delete_website)
-                .around(log),
+                .around(log), // middleware
         )
-        .at("/website", post(create_website))
+        .at("/website", post(create_website).around(log))
         .at("/websites/:user_id", get(get_websites_by_user))
         .at("/signup", post(signup))
         .at("/signin", post(signin))
-        .data(arched_store)
-        .around(log);
+        .data(arched_store);
 
     Server::new(TcpListener::bind("0.0.0.0:3000"))
         .name("LiveStack Server") // give it a name to server

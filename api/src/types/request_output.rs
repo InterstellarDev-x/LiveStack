@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use store::NaiveDateTime;
 
 #[derive(Serialize, Deserialize)]
 pub struct CreateWebsiteOutput {
@@ -11,7 +12,13 @@ pub struct WebsiteOutput {
     pub id: String,
     pub url: String,
     pub user_id: String,
+    pub time_added: NaiveDateTime,
 }
+
+
+
+
+
 
 #[derive(Serialize, Deserialize)]
 pub struct DeleteWebsiteOutput {

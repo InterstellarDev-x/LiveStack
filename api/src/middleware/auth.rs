@@ -8,7 +8,7 @@ struct Claims {
 }
 
 #[derive(Clone)]
-struct UserId(String);
+pub struct UserId(pub String);
 
 pub async fn log<E: Endpoint>(next: E, mut req: Request) -> Result<Response, Error> {
     println!("request: {}", req.uri().path());
@@ -16,7 +16,6 @@ pub async fn log<E: Endpoint>(next: E, mut req: Request) -> Result<Response, Err
         .headers()
         .get("token")
         .ok_or_else(|| Error::from_status(StatusCode::UNAUTHORIZED))?; // If header exists → continue 
-    println!("{:?}", token);
     let mut validation = Validation::new(jsonwebtoken::Algorithm::HS256);
     validation.validate_exp = false;
     validation.set_required_spec_claims(&["exp"]);
@@ -30,9 +29,9 @@ pub async fn log<E: Endpoint>(next: E, mut req: Request) -> Result<Response, Err
         },
     };
     req.extensions_mut()
-        .insert(UserId(token_data.claims.user_id));
+        .insert(UserId(token_data.claims.user_id)); // inserting userId to req 
 
-    let res = next.call(req).await;
+    let res = next.call(req).await; // calling next route
     match res {
         Ok(resp) => {
             let resp = resp.into_response();

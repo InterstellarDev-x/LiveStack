@@ -1,7 +1,7 @@
-use crate::Store;
+use crate::{Store, schema::sql_types::WebsiteStatus};
 use chrono::{NaiveDateTime, Utc};
 use diesel::prelude::*;
-
+use diesel_derive_enum::DbEnum;
 use uuid::Uuid;
 #[derive(Queryable, Selectable, Insertable)]
 #[diesel(table_name = crate::schema::website)]
@@ -14,6 +14,33 @@ pub struct Website {
     pub user_id: String,
 }
 
+#[derive(Debug , DbEnum)]
+#[ExistingTypePath = "WebsiteStatus"]
+enum WebsiteStatusEnum {
+    Up,
+    Down,
+    Unknown,
+}
+
+#[derive(Queryable, Selectable, Insertable, Debug)]
+#[diesel(table_name = crate::schema::website_tick)]
+#[diesel(check_for_backend(diesel::pg::Pg))]
+
+pub struct WebsiteTick {
+    pub id: String,
+    pub response_time_ms: i32,
+    pub status: WebsiteStatusEnum,
+    pub region_id: String,
+    pub website_id: String,
+    pub createdAt: NaiveDateTime,
+}
+
+
+
+pub struct WebsiteWithLatestTick {
+   pub  website: Website,
+   pub  latest_tick: Option<WebsiteTick>,
+}
 impl Store {
     pub fn create_website(
         &mut self,
@@ -39,15 +66,36 @@ impl Store {
     pub fn get_website_by_id(
         &mut self,
         input_website_id: String,
-    ) -> Result<Website, diesel::result::Error> {
+    ) -> Result<WebsiteWithLatestTick, diesel::result::Error> {
         use crate::schema::website::dsl::*;
 
         let website_result = website
-            .filter(id.eq(input_website_id))
+            .filter(id.eq(&input_website_id))
             .select(Website::as_select())
             .first(&mut self.conn)?;
 
-        return Ok(website_result);
+        let latest_ticks: Option<WebsiteTick>;
+        {
+            use crate::schema::website_tick::dsl::*;
+
+            latest_ticks = website_tick
+                .filter(website_id.eq(&input_website_id))
+                .order(createdAt.desc())
+                .select(WebsiteTick::as_select())
+                .first::<WebsiteTick>(&mut self.conn)
+                .optional()?;
+        }
+
+  
+
+       match latest_ticks {
+        Some(latest) =>{
+            Ok(WebsiteWithLatestTick { website: website_result , latest_tick:  Some(latest) })
+        },
+        None => {
+           Ok(WebsiteWithLatestTick { website: website_result, latest_tick: None })
+        }
+       }
     }
 
     pub fn delete_by_id(

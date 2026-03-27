@@ -7,6 +7,7 @@ pub mod schema;
 pub struct Store {
     pub conn: PgConnection,
 }
+pub use chrono::NaiveDateTime;
 
 impl Store {
     pub fn default() -> Result<Self, ConnectionError> {
