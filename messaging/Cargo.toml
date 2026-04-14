@@ -5,3 +5,4 @@ edition = "2024"
 
 [dependencies]
 redis = { version = "1.0.4" , features = ["streams" , "tokio-comp"]}
+store = { path = "../store"}

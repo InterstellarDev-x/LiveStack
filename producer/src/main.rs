@@ -5,6 +5,7 @@ use std::{
 use messaging::config::StreamService;
 use store::{Store, models::website::Website};
 use tokio_cron_scheduler::{Job, JobScheduler, JobSchedulerError};
+
 pub mod util;
 const _CHUNK_LENGTH : u8 = 50;
 
@@ -25,13 +26,10 @@ async fn main() -> Result<(), JobSchedulerError> {
             store.get_all_websites()
         }.unwrap();
 
-        stream.add_records();
 
-
-
-        println!("{:?}" , websites);
-
-        // should i write business logic
+       let _ =  stream.add_records_batch(&websites);
+       
+        // shou_d i write business logic
     })?;
 
 

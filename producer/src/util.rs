@@ -1,13 +1,13 @@
 use store::models::website::Website;
 
 #[derive(Debug)]
-struct  Messages {
+pub struct  Messages {
  pub  id : String,
  pub url : String
 }
 
 
-fn website_to_message(websites : Vec<Website>) -> Vec<Messages> {
+pub fn website_to_message(websites : Vec<Website>) -> Vec<Messages> {
   
   let mut messages  = Vec::new();
 

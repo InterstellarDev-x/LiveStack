@@ -1,4 +1,5 @@
 use redis::{Commands, RedisResult, pipe, streams::StreamMaxlen};
+use store::models::website::Website;
 
 use crate::BETTERUPTIME;
 
@@ -62,10 +63,17 @@ impl StreamService {
                 .arg("*")
                 .arg(&[
                     ("url", site.url.clone()),
+                    ("id" , site.id.clone())
                 ]);
         }
     
         let _: () = p.query(&mut con)?;
+
+        let len: usize = con.xlen(BETTERUPTIME).unwrap();
+    
+        // println!("{}" , con.xlen::<_, usize>(STREAMS[0]).unwrap());
+        println!("thie size is {}", len);
+
         Ok(())
     }
     

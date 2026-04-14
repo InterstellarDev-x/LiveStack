@@ -17,3 +17,7 @@ Starting Requirements
 # redis instance
 # postgres instance
 
+
+
+some learning while making the project
+In Rust, a type is identified by its full path, not just its visible name.
