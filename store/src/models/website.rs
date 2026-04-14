@@ -7,7 +7,7 @@ use uuid::Uuid;
 #[derive(Queryable, Selectable, Insertable)]
 #[diesel(table_name = crate::schema::website)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize , Debug)]
 pub struct Website {
     pub id: String,
     pub url: String,
@@ -134,6 +134,13 @@ impl Store {
         let response = website
             .filter(user_id.eq(input_user_id))
             .load::<Website>(&mut self.conn)?;
+        return Ok(response);
+    }
+
+   // for producer to proudce 
+    pub fn get_all_websites(&mut self) -> Result<Vec<Website> , diesel::result::Error> {
+        use crate::schema::website::dsl::*;
+        let response = website.load::<Website>(&mut self.conn)?;
         return Ok(response);
     }
 }

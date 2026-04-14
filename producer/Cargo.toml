@@ -5,3 +5,6 @@ edition = "2024"
 
 [dependencies]
 messaging = {path = "../messaging"}
+tokio-cron-scheduler = "*"
+tokio = { version = "1.49.0" , features = ["full"]}
+store = {path = "../store"}

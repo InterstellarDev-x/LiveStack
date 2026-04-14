@@ -3,7 +3,6 @@ use redis::{Commands, RedisResult, Value};
 const BETTERUPTIME: &str = "better-uptime";
 const STREAMS: &[&str] = &[BETTERUPTIME];
 pub mod config;
-pub mod pool;
 
 pub fn redis_main() {
     let client = redis::Client::open("redis://127.0.0.1/").expect("client");
@@ -20,17 +19,6 @@ pub fn add_records(client: &redis::Client) -> RedisResult<()> {
     let maxlen = StreamMaxlen::Approx(1000);
 
     // a stream whose records have two fields
-    for _ in 0..1 {
-        let _: () = con.xadd_maxlen(
-            BETTERUPTIME,
-            maxlen, // how many latest entries should we keep in redis while adding
-            "*",
-            &[
-                ("url", String::from("www.google.com")),
-                ("url", "www.facebook.com".into()),
-            ],
-        )?;
-    }
     for _ in 0..1 {
         let _: () = con.xadd_maxlen(
             BETTERUPTIME,
