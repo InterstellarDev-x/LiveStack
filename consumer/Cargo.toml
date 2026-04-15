@@ -5,3 +5,5 @@ edition = "2024"
 
 [dependencies]
 messaging = {path = "../messaging"}
+reqwest = { version = "0.13", features = ["json"] }
+tokio = { version = "1", features = ["full"] }
