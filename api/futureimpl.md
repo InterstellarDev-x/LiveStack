@@ -11,7 +11,7 @@ Replace the current single shared database connection:
 Arc<Mutex<Store>>
 ```
 
-with a proper pooled connection architecture so the API can handle concurrent requests efficiently.
+with a pooled connection architecture so the API can handle concurrent requests more efficiently.
 
 ## Why This Change?
 
@@ -56,7 +56,7 @@ PostgreSQL Handles Concurrency
 
 - Multiple requests can hit DB concurrently.
 - Better throughput and lower latency.
-- Scales naturally with traffic.
+- Scales better under concurrent traffic until pool or DB limits are reached.
 - More production-like backend architecture.
 
 ## Internal Concurrency Model
@@ -71,7 +71,7 @@ Thread C -> waits if pool exhausted
 
 Important:
 
-Mutex is still used internally by the pool, but only to protect pool bookkeeping, not the full DB query.
+Mutex is still used internally by the pool, but only to protect pool bookkeeping, not the full DB query execution.
 
 ## Implementation Steps
 
@@ -103,6 +103,12 @@ let pool = Pool::builder()
     .unwrap();
 ```
 
+Note:
+
+- `r2d2::Pool` is already designed to be shared across threads.
+- In most cases you can place the pool directly in app state or clone it cheaply.
+- You usually do not need `Arc<Mutex<DbPool>>`.
+
 ### Step 4: Replace App State
 
 - Old: `Arc<Mutex<Store>>`
@@ -131,6 +137,22 @@ create_user(&mut conn, ...)?;
 ```
 
 Connection auto-returns when dropped.
+
+### Step 7: Keep Blocking Work In Mind
+
+Diesel with `PgConnection` is synchronous.
+
+That means:
+
+- Pooling allows multiple requests to use different DB connections concurrently.
+- Each individual query is still blocking Rust thread execution while it runs.
+- In an async HTTP server, this is usually acceptable at small scale, but it is still not the same thing as async database IO.
+
+Long term options:
+
+- Keep Diesel + pool if the service remains simple.
+- Move DB work to `spawn_blocking` if blocking becomes an issue.
+- Consider an async database library later if your architecture needs it.
 
 ## Suggested Pool Sizes
 
@@ -203,4 +225,4 @@ Responsible for:
 
 Connection pooling improves concurrency by allowing multiple database connections to be reused safely across requests.
 Instead of serializing all database access through one mutex-protected connection, requests borrow temporary connections from a shared pool.
-PostgreSQL handles data consistency internally, while the pool manages connection allocation.
+PostgreSQL handles transactional correctness and concurrency control, while the pool manages connection allocation.
