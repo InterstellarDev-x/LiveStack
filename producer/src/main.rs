@@ -10,7 +10,7 @@ use tokio_cron_scheduler::{Job, JobScheduler};
 pub mod util;
 
 const REDIS_URL: &str = "redis://127.0.0.1/";
-const PRODUCE_INTERVAL_SECONDS: u64 = 10;
+const PRODUCE_INTERVAL_SECONDS: u64 = 180;
 
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

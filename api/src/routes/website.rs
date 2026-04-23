@@ -1,5 +1,3 @@
-use std::sync::{Arc, Mutex};
-
 use crate::{
     middleware::auth::UserId,
     types::{
@@ -16,9 +14,13 @@ use poem::{
     web::{Data, Json, Path},
 };
 use store::{
-    Store,
+    DbPool, Store,
     models::website::{Website, WebsiteWithLatestTick},
 };
+
+fn store_from_pool(pool: &DbPool) -> Result<Store, Error> {
+    Store::from_pool(pool).map_err(|_| Error::from_status(StatusCode::SERVICE_UNAVAILABLE))
+}
 
 fn map_website_with_tick_to_output(website: WebsiteWithLatestTick) -> WebsiteOutputWithTick {
     WebsiteOutputWithTick {
@@ -42,9 +44,9 @@ fn map_website_to_output(website: Website) -> WebsiteOutput {
 #[handler]
 pub fn get_website(
     Path(website_id): Path<String>,
-    Data(store): Data<&Arc<Mutex<Store>>>,
+    Data(pool): Data<&DbPool>,
 ) -> Result<Json<WebsiteOutputWithTick>, Error> {
-    let mut store = store.lock().unwrap();
+    let mut store = store_from_pool(pool)?;
 
     let website = store
         .get_website_by_id(website_id)
@@ -56,10 +58,10 @@ pub fn get_website(
 #[handler]
 pub fn create_website(
     Json(data): Json<CreateWebsiteInput>,
-    Data(store): Data<&Arc<Mutex<Store>>>,
+    Data(pool): Data<&DbPool>,
     req: &Request,
 ) -> Result<Json<CreateWebsiteOutput>, Error> {
-    let mut store = store.lock().unwrap();
+    let mut store = store_from_pool(pool)?;
     let user_id = req.extensions().get::<UserId>();
 
     match user_id {
@@ -84,9 +86,9 @@ pub fn create_website(
 #[handler]
 pub fn delete_website(
     Path(website_id): Path<String>,
-    Data(store): Data<&Arc<Mutex<Store>>>,
+    Data(pool): Data<&DbPool>,
 ) -> Result<Json<DeleteWebsiteOutput>, Error> {
-    let mut store = store.lock().unwrap();
+    let mut store = store_from_pool(pool)?;
 
     let deleted = store
         .delete_by_id(website_id)
@@ -103,9 +105,9 @@ pub fn delete_website(
 pub fn update_website(
     Path(website_id): Path<String>,
     Json(data): Json<UpdateWebsiteInput>,
-    Data(store): Data<&Arc<Mutex<Store>>>,
+    Data(pool): Data<&DbPool>,
 ) -> Result<Json<WebsiteOutput>, Error> {
-    let mut store = store.lock().unwrap();
+    let mut store = store_from_pool(pool)?;
 
     // should have regex that match for url if pass then move ahead
 
@@ -119,9 +121,9 @@ pub fn update_website(
 #[handler]
 pub fn get_websites_by_user(
     Path(user_id): Path<String>,
-    Data(store): Data<&Arc<Mutex<Store>>>,
+    Data(pool): Data<&DbPool>,
 ) -> Result<Json<WebsitesByUserOutput>, Error> {
-    let mut store = store.lock().unwrap();
+    let mut store = store_from_pool(pool)?;
 
     let websites = store
         .get_websites_by_user_id(user_id)

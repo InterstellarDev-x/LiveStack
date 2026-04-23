@@ -1,6 +1,9 @@
 use redis::{
     Commands, RedisResult, Value, pipe,
-    streams::{StreamId, StreamKey, StreamMaxlen, StreamReadOptions, StreamReadReply},
+    streams::{
+        StreamAutoClaimOptions, StreamAutoClaimReply, StreamId, StreamKey, StreamMaxlen,
+        StreamReadOptions, StreamReadReply,
+    },
 };
 use store::models::website::Website;
 
@@ -106,22 +109,51 @@ impl StreamService {
         };
 
         let mut messages = Vec::new();
+        let mut malformed_ids = Vec::new();
 
         for StreamKey { ids, .. } in reply.keys {
-            for StreamId { id, map, .. } in ids {
-                let website_id = map.get("id").and_then(value_to_string);
-                let url = map.get("url").and_then(value_to_string);
-
-                if let (Some(website_id), Some(url)) = (website_id, url) {
-                    messages.push(WebsiteCheckMessage {
-                        stream_id: id,
-                        website_id,
-                        url,
-                    });
+            for stream_id in ids {
+                match stream_id_to_message(stream_id) {
+                    Ok(message) => messages.push(message),
+                    Err(stream_id) => malformed_ids.push(stream_id),
                 }
             }
         }
 
+        ack_malformed_records(&mut con, group_name, &malformed_ids)?;
+        Ok(messages)
+    }
+
+    pub fn claim_pending_records(
+        &self,
+        group_name: &str,
+        consumer_name: &str,
+        min_idle_millis: usize,
+        count: usize,
+    ) -> RedisResult<Vec<WebsiteCheckMessage>> {
+        let mut con = self.get_conn()?;
+        let opts = StreamAutoClaimOptions::default().count(count);
+
+        let reply: StreamAutoClaimReply = con.xautoclaim_options(
+            BETTERUPTIME,
+            group_name,
+            consumer_name,
+            min_idle_millis,
+            "0-0",
+            opts,
+        )?;
+
+        let mut messages = Vec::new();
+        let mut malformed_ids = Vec::new();
+
+        for stream_id in reply.claimed {
+            match stream_id_to_message(stream_id) {
+                Ok(message) => messages.push(message),
+                Err(stream_id) => malformed_ids.push(stream_id),
+            }
+        }
+
+        ack_malformed_records(&mut con, group_name, &malformed_ids)?;
         Ok(messages)
     }
 
@@ -142,4 +174,35 @@ fn value_to_string(value: &Value) -> Option<String> {
         Value::SimpleString(value) => Some(value.clone()),
         _ => None,
     }
+}
+
+fn stream_id_to_message(stream_id: StreamId) -> Result<WebsiteCheckMessage, String> {
+    let id = stream_id.id;
+    let website_id = stream_id.map.get("id").and_then(value_to_string);
+    let url = stream_id.map.get("url").and_then(value_to_string);
+
+    match (website_id, url) {
+        (Some(website_id), Some(url)) => Ok(WebsiteCheckMessage {
+            stream_id: id,
+            website_id,
+            url,
+        }),
+        _ => Err(id),
+    }
+}
+
+fn ack_malformed_records(
+    con: &mut redis::Connection,
+    group_name: &str,
+    ids: &[String],
+) -> RedisResult<()> {
+    if ids.is_empty() {
+        return Ok(());
+    }
+
+    let ids: Vec<&str> = ids.iter().map(String::as_str).collect();
+    let acked: usize = con.xack(BETTERUPTIME, group_name, &ids)?;
+    eprintln!("acked {acked} malformed stream records");
+
+    Ok(())
 }

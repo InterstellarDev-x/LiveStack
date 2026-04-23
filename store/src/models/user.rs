@@ -29,7 +29,7 @@ impl Store {
         let response = diesel::insert_into(crate::schema::user::table)
             .values(&new_user)
             .returning(User::as_returning())
-            .get_result(&mut self.conn)?;
+            .get_result(self.conn())?;
 
         Ok(response)
     }
@@ -43,7 +43,7 @@ impl Store {
         let user_result = user
             .filter(username.eq(input_username))
             .select(User::as_select())
-            .first(&mut self.conn)
+            .first(self.conn())
             .optional()?;
 
         Ok(match user_result {
@@ -61,7 +61,7 @@ impl Store {
         let user_result = user
             .filter(username.eq(input_username))
             .select(User::as_select())
-            .first(&mut self.conn)?;
+            .first(self.conn())?;
 
         return Ok(user_result);
     }

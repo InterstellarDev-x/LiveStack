@@ -1,6 +1,3 @@
-use std::sync::{Arc, Mutex};
-
-use messaging::redis_main;
 use poem::{EndpointExt, Route, Server, get, listener::TcpListener, post};
 use store::Store;
 
@@ -16,9 +13,9 @@ pub mod routes;
 pub mod types;
 
 #[tokio::main(flavor = "multi_thread")]
-async fn main() -> Result<(), std::io::Error> {
-    // redis_main();
-    let arched_store = Arc::new(Mutex::new(Store::default().unwrap()));
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let store_pool =
+        Store::pool().map_err(|err| -> Box<dyn std::error::Error> { Box::new(err) })?;
 
     // specify the business logic
     let app = Route::new()
@@ -33,10 +30,10 @@ async fn main() -> Result<(), std::io::Error> {
         .at("/websites/:user_id", get(get_websites_by_user))
         .at("/signup", post(signup))
         .at("/signin", post(signin))
-        .data(arched_store);
+        .data(store_pool);
 
-    Server::new(TcpListener::bind("0.0.0.0:3000"))
+    Ok(Server::new(TcpListener::bind("0.0.0.0:3000"))
         .name("LiveStack Server") // give it a name to server
         .run(app) // this
-        .await
+        .await?)
 }

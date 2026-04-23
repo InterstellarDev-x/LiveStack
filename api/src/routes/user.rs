@@ -1,7 +1,4 @@
-use std::{
-    sync::{Arc, Mutex},
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::{
     types::request_input::SigninInput,
@@ -11,7 +8,7 @@ use jsonwebtoken::{EncodingKey, Header, encode};
 use poem::{Error, handler, web::Data};
 use poem::{http::StatusCode, web::Json};
 use serde::{Deserialize, Serialize};
-use store::Store;
+use store::{DbPool, Store};
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Claims {
@@ -19,21 +16,25 @@ struct Claims {
     exp: u64,
 }
 
+fn store_from_pool(pool: &DbPool) -> Result<Store, Error> {
+    Store::from_pool(pool).map_err(|_| Error::from_status(StatusCode::SERVICE_UNAVAILABLE))
+}
+
 #[handler]
 pub fn signup(
     Json(data): Json<SigninInput>,
-    Data(store): Data<&Arc<Mutex<Store>>>,
+    Data(pool): Data<&DbPool>,
 ) -> Result<Json<SignUpOutput>, Error> {
-    let mut locked_store = store.lock().unwrap();
+    let mut store = store_from_pool(pool)?;
 
-    match locked_store.is_user_exist(&data.username) {
+    match store.is_user_exist(&data.username) {
         Ok(true) => {
             return Ok(Json(SignUpOutput {
                 success: false,
                 message: "User already registerd".into(),
             }));
         }
-        Ok(false) => match locked_store.create_user(data.username, data.password) {
+        Ok(false) => match store.create_user(data.username, data.password) {
             Ok(u) => {
                 return Ok(Json(SignUpOutput {
                     success: true,
@@ -61,9 +62,9 @@ pub fn signup(
 #[handler]
 pub fn signin(
     Json(data): Json<SigninInput>,
-    Data(store): Data<&Arc<Mutex<Store>>>,
+    Data(pool): Data<&DbPool>,
 ) -> Result<Json<SignInpOutput>, Error> {
-    let mut store = store.lock().unwrap();
+    let mut store = store_from_pool(pool)?;
 
     match store.is_user_exist(&data.username) {
         Ok(true) => {

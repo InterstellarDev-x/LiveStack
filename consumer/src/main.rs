@@ -7,6 +7,7 @@ const REDIS_URL: &str = "redis://127.0.0.1/";
 const CONSUMER_GROUP: &str = "uptime-checkers";
 const READ_BATCH_SIZE: usize = 10;
 const READ_BLOCK_MILLIS: usize = 5000;
+const CLAIM_MIN_IDLE_MILLIS: usize = 5000;
 const DEFAULT_REGION_ID: &str = "india";
 const DEFAULT_REGION_NAME: &str = "India";
 
@@ -27,6 +28,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut store = Store::default()?;
     store.ensure_region(region_id.clone(), region_name)?;
 
+    println!("consumer {consumer_name} listening on group {CONSUMER_GROUP}");
+
     loop {
         let stream_clone = Arc::clone(&stream);
         let consumer_name_clone = consumer_name.clone();
@@ -40,6 +43,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             )
         })
         .await??;
+
+        let messages = if messages.is_empty() {
+            let stream_clone = Arc::clone(&stream);
+            let consumer_name_clone = consumer_name.clone();
+
+            tokio::task::spawn_blocking(move || {
+                stream_clone.claim_pending_records(
+                    CONSUMER_GROUP,
+                    &consumer_name_clone,
+                    CLAIM_MIN_IDLE_MILLIS,
+                    READ_BATCH_SIZE,
+                )
+            })
+            .await??
+        } else {
+            messages
+        };
 
         if messages.is_empty() {
             continue;
@@ -60,6 +80,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         stream.ack_records(CONSUMER_GROUP, &processed_ids)?;
+        println!("processed {} website checks", processed_ids.len());
     }
 }
 

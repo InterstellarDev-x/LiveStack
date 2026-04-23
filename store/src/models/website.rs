@@ -17,6 +17,7 @@ pub struct Website {
 
 #[derive(Debug, DbEnum)]
 #[ExistingTypePath = "WebsiteStatus"]
+#[DbValueStyle = "verbatim"]
 #[derive(Serialize, Deserialize)]
 pub enum WebsiteStatusEnum {
     Up,
@@ -34,7 +35,9 @@ pub struct WebsiteTick {
     pub status: WebsiteStatusEnum,
     pub region_id: String,
     pub website_id: String,
-    pub createdAt: NaiveDateTime,
+    #[diesel(column_name = createdAt)]
+    #[serde(rename = "createdAt")]
+    pub created_at: NaiveDateTime,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -68,7 +71,7 @@ impl Store {
         let response = diesel::insert_into(crate::schema::website::table)
             .values(new_webiste)
             .returning(Website::as_returning())
-            .get_result(&mut self.conn)?;
+            .get_result(self.conn())?;
 
         Ok(response)
     }
@@ -82,7 +85,7 @@ impl Store {
         let website_result = website
             .filter(id.eq(&input_website_id))
             .select(Website::as_select())
-            .first(&mut self.conn)?;
+            .first(self.conn())?;
 
         let latest_ticks: Option<WebsiteTick>;
         {
@@ -92,7 +95,7 @@ impl Store {
                 .filter(website_id.eq(&input_website_id))
                 .order(createdAt.desc())
                 .select(WebsiteTick::as_select())
-                .first::<WebsiteTick>(&mut self.conn)
+                .first::<WebsiteTick>(self.conn())
                 .optional()?;
         }
 
@@ -116,7 +119,7 @@ impl Store {
 
         let deleted_site = diesel::delete(website)
             .filter(id.eq(input_website_id))
-            .execute(&mut self.conn)?;
+            .execute(self.conn())?;
 
         Ok(deleted_site > 0)
     }
@@ -130,7 +133,7 @@ impl Store {
 
         let updated_site = diesel::update(website.filter(id.eq(input_website_id)))
             .set(url.eq(updated_url))
-            .get_result(&mut self.conn)?;
+            .get_result(self.conn())?;
 
         return Ok(updated_site);
     }
@@ -142,14 +145,14 @@ impl Store {
         use crate::schema::website::dsl::*;
         let response = website
             .filter(user_id.eq(input_user_id))
-            .load::<Website>(&mut self.conn)?;
+            .load::<Website>(self.conn())?;
         return Ok(response);
     }
 
     // for producer to proudce
     pub fn get_all_websites(&mut self) -> Result<Vec<Website>, diesel::result::Error> {
         use crate::schema::website::dsl::*;
-        let response = website.load::<Website>(&mut self.conn)?;
+        let response = website.load::<Website>(self.conn())?;
         return Ok(response);
     }
 
@@ -169,7 +172,7 @@ impl Store {
             .values(new_region)
             .on_conflict(id)
             .do_nothing()
-            .execute(&mut self.conn)?;
+            .execute(self.conn())?;
 
         Ok(())
     }
@@ -187,13 +190,13 @@ impl Store {
             status: input_status,
             region_id: input_region_id,
             website_id: input_website_id,
-            createdAt: Utc::now().naive_utc(),
+            created_at: Utc::now().naive_utc(),
         };
 
         let response = diesel::insert_into(crate::schema::website_tick::table)
             .values(new_tick)
             .returning(WebsiteTick::as_returning())
-            .get_result(&mut self.conn)?;
+            .get_result(self.conn())?;
 
         Ok(response)
     }
