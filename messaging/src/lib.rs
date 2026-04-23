@@ -1,14 +1,15 @@
-use redis::streams::{StreamId, StreamKey, StreamMaxlen, StreamReadOptions, StreamReadReply};
-use redis::{Commands, RedisResult, Value};
+use redis::streams::StreamMaxlen;
+use redis::{Commands, RedisResult};
+
 const BETTERUPTIME: &str = "better-uptime";
 const STREAMS: &[&str] = &[BETTERUPTIME];
+
 pub mod config;
 
 pub fn redis_main() {
     let client = redis::Client::open("redis://127.0.0.1/").expect("client");
     println!("Demonstrating XADD followed by XREAD, single threaded\n");
     add_records(&client).expect("contrived record generation");
-    read_records(&client).expect("simple read");
     // demo_group_reads(&client);
     clean_up(&client)
 }
@@ -41,7 +42,6 @@ pub fn add_records(client: &redis::Client) -> RedisResult<()> {
 
 /// Block the thread for this many milliseconds while
 /// waiting for data to arrive on the stream.
-const BLOCK_MILLIS: usize = 5000;
 
 /// Read back records from all three streams, if they're available.
 /// Doesn't bother with consumer groups.  Generally the user
@@ -49,38 +49,6 @@ const BLOCK_MILLIS: usize = 5000;
 /// ID from which they need to read, but in this example, we
 /// just go back to the beginning of time and ask for all the
 /// records in the stream.
-fn read_records(client: &redis::Client) -> RedisResult<()> {
-    let mut con = client.get_connection().expect("conn");
-
-    let opts = StreamReadOptions::default().block(BLOCK_MILLIS);
-
-    // Oldest known time index
-    let starting_id = "0-0";
-    // Same as above
-    let another_form = "0";
-
-    let srr: StreamReadReply = con
-        .xread_options(STREAMS, &[starting_id, another_form, starting_id], &opts)
-        .expect("read");
-
-    println!("{:?}", srr);
-
-    for StreamKey { key, ids } in srr.keys {
-        println!("Stream {key}");
-        for StreamId { id, map, .. } in ids {
-            println!("\tID {id}");
-            for (n, s) in map {
-                if let Value::BulkString(bytes) = s {
-                    println!("\t\t{}: {}", n, String::from_utf8(bytes).expect("utf8"))
-                } else {
-                    panic!("Weird data")
-                }
-            }
-        }
-    }
-
-    Ok(())
-}
 
 const GROUP_NAME: &str = "example-group-aaa";
 

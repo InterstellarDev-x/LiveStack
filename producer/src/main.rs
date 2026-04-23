@@ -1,61 +1,58 @@
 use std::{
- sync::{Arc, Mutex}, time::Duration
+    sync::{Arc, Mutex},
+    time::Duration,
 };
 
 use messaging::config::StreamService;
-use store::{Store, models::website::Website};
-use tokio_cron_scheduler::{Job, JobScheduler, JobSchedulerError};
+use store::Store;
+use tokio_cron_scheduler::{Job, JobScheduler};
 
 pub mod util;
-const _CHUNK_LENGTH : u8 = 50;
+
+const REDIS_URL: &str = "redis://127.0.0.1/";
+const PRODUCE_INTERVAL_SECONDS: u64 = 10;
 
 #[tokio::main(flavor = "multi_thread")]
-async fn main() -> Result<(), JobSchedulerError> {
-    let arched_store = Arc::new(Mutex::new(Store::default().unwrap()));
-    let stream = StreamService::new("redis://127.0.0.1/").unwrap();
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let store = Arc::new(Mutex::new(Store::default()?));
+    let stream = Arc::new(StreamService::new(REDIS_URL)?);
 
     let sched = JobScheduler::new().await?;
 
-    let mut jj = Job::new_repeated(Duration::from_secs(10), move |uuid, _l| {
-        println!("I run repeatedly every 3 minute  {}", uuid);
+    let job_store = Arc::clone(&store);
+    let job_stream = Arc::clone(&stream);
 
+    let job = Job::new_repeated(
+        Duration::from_secs(PRODUCE_INTERVAL_SECONDS),
+        move |uuid, _lock| {
+            println!("producer job {uuid} started");
 
+            let websites = {
+                let mut store = job_store.lock().unwrap();
+                store.get_all_websites()
+            };
 
-        let websites : Vec<Website> = {
-            let mut store = arched_store.lock().unwrap();
-            store.get_all_websites()
-        }.unwrap();
+            match websites {
+                Ok(websites) if websites.is_empty() => {
+                    println!("producer found no websites to queue");
+                }
+                Ok(websites) => {
+                    if let Err(err) = job_stream.add_records_batch(&websites) {
+                        eprintln!("producer failed to queue website checks: {err}");
+                    }
+                }
+                Err(err) => {
+                    eprintln!("producer failed to load websites: {err}");
+                }
+            }
+        },
+    )?;
 
-
-       let _ =  stream.add_records_batch(&websites);
-       
-        // shou_d i write business logic
-    })?;
-
-
-    jj.on_start_notification_add(&sched, Box::new(|job_id, notification_id, type_of_notification| {
-        Box::pin(async move {
-            println!("Job {:?} was started, notification {:?} ran ({:?})", job_id, notification_id, type_of_notification);
-        })
-    })).await?;
-
-
-
-
-
-    jj.on_stop_notification_add(&sched, Box::new(|job_id, notification_id, type_of_notification| {
-        Box::pin(async move {
-            println!("Job {:?} was completed, notification {:?} ran ({:?})", job_id, notification_id, type_of_notification);
-        })
-    })).await?;
-
-    sched.add(jj).await?;
+    sched.add(job).await?;
     sched.start().await?;
-    tokio::time::sleep(Duration::from_secs(100)).await;
 
-
+    println!("producer running every {PRODUCE_INTERVAL_SECONDS} seconds");
+    tokio::signal::ctrl_c().await?;
 
     Ok(())
-
-
 }

@@ -7,7 +7,7 @@ use uuid::Uuid;
 #[derive(Queryable, Selectable, Insertable)]
 #[diesel(table_name = crate::schema::website)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
-#[derive(Serialize, Deserialize , Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Website {
     pub id: String,
     pub url: String,
@@ -42,6 +42,15 @@ pub struct WebsiteWithLatestTick {
     pub website: Website,
     pub latest_tick: Option<WebsiteTick>,
 }
+
+#[derive(Queryable, Selectable, Insertable, Debug)]
+#[diesel(table_name = crate::schema::region)]
+#[diesel(check_for_backend(diesel::pg::Pg))]
+pub struct Region {
+    pub id: String,
+    pub name: String,
+}
+
 impl Store {
     pub fn create_website(
         &mut self,
@@ -137,10 +146,55 @@ impl Store {
         return Ok(response);
     }
 
-   // for producer to proudce 
-    pub fn get_all_websites(&mut self) -> Result<Vec<Website> , diesel::result::Error> {
+    // for producer to proudce
+    pub fn get_all_websites(&mut self) -> Result<Vec<Website>, diesel::result::Error> {
         use crate::schema::website::dsl::*;
         let response = website.load::<Website>(&mut self.conn)?;
         return Ok(response);
+    }
+
+    pub fn ensure_region(
+        &mut self,
+        input_region_id: String,
+        input_region_name: String,
+    ) -> Result<(), diesel::result::Error> {
+        use crate::schema::region::dsl::*;
+
+        let new_region = Region {
+            id: input_region_id,
+            name: input_region_name,
+        };
+
+        diesel::insert_into(region)
+            .values(new_region)
+            .on_conflict(id)
+            .do_nothing()
+            .execute(&mut self.conn)?;
+
+        Ok(())
+    }
+
+    pub fn create_website_tick(
+        &mut self,
+        input_website_id: String,
+        input_region_id: String,
+        input_response_time_ms: i32,
+        input_status: WebsiteStatusEnum,
+    ) -> Result<WebsiteTick, diesel::result::Error> {
+        let new_tick = WebsiteTick {
+            id: Uuid::new_v4().to_string(),
+            response_time_ms: input_response_time_ms,
+            status: input_status,
+            region_id: input_region_id,
+            website_id: input_website_id,
+            createdAt: Utc::now().naive_utc(),
+        };
+
+        let response = diesel::insert_into(crate::schema::website_tick::table)
+            .values(new_tick)
+            .returning(WebsiteTick::as_returning())
+            .get_result(&mut self.conn)?;
+
+        Ok(response)
     }
 }
