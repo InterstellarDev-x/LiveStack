@@ -52,12 +52,19 @@ pub struct ChatMessage {
 
 /// Progress the loop emits while working. `ToolFinished.details` carries the
 /// tool's structured summary (for UI/logs) — intentionally separate from the
-/// `content` the LLM sees.
-#[derive(Debug)]
+/// `content` the LLM sees. Serializes with a `type` tag so a UI can switch on
+/// it directly (e.g. over SSE).
+#[derive(Debug, Serialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
 pub enum AgentEvent {
+    /// Emitted before every model call: the assistant is deciding what to
+    /// say or which tools to call next.
+    Thinking,
     ToolStarted { name: String, arguments: Value },
     ToolFinished { name: String, details: Value },
     Reply { content: String },
+    /// The loop failed. Always the last event on a stream.
+    Error { message: String },
 }
 
 #[derive(Debug)]
@@ -135,6 +142,21 @@ pub async fn run_chat(
     run_agent(pool, user_id, history, steer_rx, None).await
 }
 
+/// Same as [`run_chat`], but reports [`AgentEvent`]s as the loop works —
+/// "thinking", tool start/finish, the final reply — so a caller (typically
+/// an SSE handler) can forward them to the client without waiting for the
+/// whole turn to finish.
+pub async fn run_chat_streaming(
+    pool: &DbPool,
+    user_id: &str,
+    history: Vec<ChatMessage>,
+    events: mpsc::UnboundedSender<AgentEvent>,
+) -> Result<String, AiError> {
+    let (steer_tx, steer_rx) = mpsc::unbounded_channel();
+    drop(steer_tx); // no live steering in one-shot HTTP mode (yet)
+    run_agent(pool, user_id, history, steer_rx, Some(events)).await
+}
+
 /// Full agent loop. `inbox` carries steering and follow-up user messages;
 /// `events` (optional) receives progress for a UI. Returns the last settled
 /// reply once the inbox closes.
@@ -193,6 +215,8 @@ pub async fn run_agent(
                 ));
             }
             rounds += 1;
+
+            emit(AgentEvent::Thinking);
 
             let request = CreateChatCompletionRequestArgs::default()
                 .model(&model)

@@ -6,6 +6,7 @@ import { Route, Routes } from 'react-router'
 import './App.css'
 import { Layout } from './components/layout'
 import { ProtectedRoute } from './components/protected-route'
+import AssistantPage from './pages/assistant'
 import EscalationPoliciesPage from './pages/escalation-policies'
 import IncidentsPage from './pages/incidents'
 import LandingPage from './pages/landing'
@@ -34,6 +35,7 @@ function App() {
           <Route path="escalation-policies" element={<EscalationPoliciesPage />} />
           <Route path="status-pages" element={<StatusPagesPage />} />
           <Route path="status-pages/:statusPageId" element={<StatusPageDetailPage />} />
+          <Route path="assistant" element={<AssistantPage />} />
           <Route path="settings" element={<SettingsPage />} />
         </Route>
       </Route>

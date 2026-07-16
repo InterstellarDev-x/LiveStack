@@ -1,7 +1,6 @@
 import { Outlet, useNavigate } from "react-router"
 
 import { AppSidebar } from "@/components/app-sidebar"
-import { ChatWidget } from "@/components/chat-widget"
 import { Button } from "@/components/ui/button"
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 import { useAuth } from "@/lib/auth"
@@ -31,7 +30,6 @@ export function Layout() {
         <div className="flex-1 p-6">
           <Outlet />
         </div>
-        <ChatWidget />
       </SidebarInset>
     </SidebarProvider>
   )

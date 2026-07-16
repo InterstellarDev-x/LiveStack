@@ -187,8 +187,3 @@ pub struct UserIncidentOutput {
 pub struct UserIncidentsOutput {
     pub incidents: Vec<UserIncidentOutput>,
 }
-
-#[derive(Serialize, Deserialize)]
-pub struct AiChatOutput {
-    pub reply: String,
-}
