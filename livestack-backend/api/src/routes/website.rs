@@ -1,10 +1,10 @@
 use crate::{
     middleware::auth::UserId,
     types::{
-        request_input::{CreateWebsiteInput, UpdateWebsiteInput},
+        request_input::{CreateWebsiteInput, SetWebsiteWebhookInput, UpdateWebsiteInput},
         request_output::{
-            CreateWebsiteOutput, DeleteWebsiteOutput, WebsiteOutput, WebsiteOutputWithTick,
-            WebsitesByUserOutput,
+            CreateWebsiteOutput, DeleteWebsiteOutput, SetWebsiteWebhookOutput, WebsiteOutput,
+            WebsiteOutputWithTick, WebsiteTicksOutput, WebsiteWebhookOutput, WebsitesByUserOutput,
         },
     },
 };
@@ -72,6 +72,30 @@ pub fn get_website(
     Ok(Json(map_website_with_tick_to_output(website)))
 }
 
+const RECENT_TICKS_LIMIT: i64 = 20;
+
+#[handler]
+pub fn get_website_ticks(
+    Path(website_id): Path<String>,
+    Data(pool): Data<&DbPool>,
+    req: &Request,
+) -> Result<Json<WebsiteTicksOutput>, Error> {
+    let user_id = authenticated_user(req)?;
+    let mut store = store_from_pool(pool)?;
+
+    // confirms the website belongs to this user before exposing its ticks,
+    // since website_tick rows have no user_id of their own to filter on
+    store
+        .get_website_by_id(website_id.clone(), &user_id)
+        .map_err(map_db_error)?;
+
+    let ticks = store
+        .get_latest_ticks_by_website_id(&website_id, RECENT_TICKS_LIMIT)
+        .map_err(map_db_error)?;
+
+    Ok(Json(WebsiteTicksOutput { ticks }))
+}
+
 #[handler]
 pub fn create_website(
     Json(data): Json<CreateWebsiteInput>,
@@ -128,6 +152,75 @@ pub fn update_website(
         .map_err(map_db_error)?;
 
     Ok(Json(map_website_to_output(updated)))
+}
+
+#[handler]
+pub fn set_website_webhook(
+    Path(website_id): Path<String>,
+    Json(data): Json<SetWebsiteWebhookInput>,
+    Data(pool): Data<&DbPool>,
+    req: &Request,
+) -> Result<Json<SetWebsiteWebhookOutput>, Error> {
+    let user_id = authenticated_user(req)?;
+    let mut store = store_from_pool(pool)?;
+
+    let config = store
+        .upsert_website_webhook(website_id, &user_id, data.webhook_url, data.webhook_enabled)
+        .map_err(map_db_error)?;
+
+    Ok(Json(SetWebsiteWebhookOutput {
+        success: true,
+        webhook_url: config.webhook_url,
+        webhook_enabled: config.webhook_enabled,
+    }))
+}
+
+#[handler]
+pub fn get_website_webhook(
+    Path(website_id): Path<String>,
+    Data(pool): Data<&DbPool>,
+    req: &Request,
+) -> Result<Json<WebsiteWebhookOutput>, Error> {
+    let user_id = authenticated_user(req)?;
+    let mut store = store_from_pool(pool)?;
+
+    let config = store
+        .get_notification_config_for_owner(&website_id, &user_id)
+        .map_err(map_db_error)?;
+
+    Ok(Json(match config {
+        Some(config) => WebsiteWebhookOutput {
+            webhook_url: config.webhook_url,
+            webhook_secret: config.webhook_secret,
+            webhook_enabled: config.webhook_enabled,
+        },
+        // no config row yet - the owner hasn't set a webhook for this website
+        None => WebsiteWebhookOutput {
+            webhook_url: None,
+            webhook_secret: None,
+            webhook_enabled: false,
+        },
+    }))
+}
+
+#[handler]
+pub fn regenerate_website_webhook_secret(
+    Path(website_id): Path<String>,
+    Data(pool): Data<&DbPool>,
+    req: &Request,
+) -> Result<Json<WebsiteWebhookOutput>, Error> {
+    let user_id = authenticated_user(req)?;
+    let mut store = store_from_pool(pool)?;
+
+    let config = store
+        .regenerate_webhook_secret(&website_id, &user_id)
+        .map_err(map_db_error)?;
+
+    Ok(Json(WebsiteWebhookOutput {
+        webhook_url: config.webhook_url,
+        webhook_secret: config.webhook_secret,
+        webhook_enabled: config.webhook_enabled,
+    }))
 }
 
 #[handler]

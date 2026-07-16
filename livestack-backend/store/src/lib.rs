@@ -7,6 +7,7 @@ pub mod config;
 pub mod models;
 pub mod schema;
 
+pub use diesel::result::DatabaseErrorKind;
 pub use diesel::result::Error as DbError;
 
 pub type DbPool = Pool<ConnectionManager<PgConnection>>;

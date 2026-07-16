@@ -1,15 +1,19 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::{
-    types::request_input::{SigninInput, SignupInput},
-    types::request_output::{SignInpOutput, SignUpOutput},
+    middleware::auth::UserId,
+    types::request_input::{SigninInput, SignupInput, UpdateEmailAlertsInput, UpdateEmailInput},
+    types::request_output::{
+        CurrentUserOutput, SignInpOutput, SignUpOutput, UpdateEmailAlertsOutput,
+        UpdateEmailOutput,
+    },
     utils::{hash_password, jwt_secret, verify_password},
 };
 use jsonwebtoken::{EncodingKey, Header, encode};
-use poem::{Error, handler, web::Data};
+use poem::{Error, Request, handler, web::Data};
 use poem::{http::StatusCode, web::Json};
 use serde::{Deserialize, Serialize};
-use store::{DbPool, Store};
+use store::{DbError, DbPool, Store};
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Claims {
@@ -93,5 +97,90 @@ pub fn signin(
     Ok(Json(SignInpOutput {
         success: true,
         token,
+    }))
+}
+
+#[handler]
+pub fn update_email(
+    Json(data): Json<UpdateEmailInput>,
+    Data(pool): Data<&DbPool>,
+    req: &Request,
+) -> Result<Json<UpdateEmailOutput>, Error> {
+    let UserId(user_id) = req
+        .extensions()
+        .get::<UserId>()
+        .cloned()
+        .ok_or_else(|| Error::from_status(StatusCode::UNAUTHORIZED))?;
+
+    // full RFC 5322 validation isn't worth it here; just catch obvious typos
+    if !data.email.contains('@') {
+        return Err(Error::from_status(StatusCode::BAD_REQUEST));
+    }
+
+    let mut store = store_from_pool(pool)?;
+
+    let updated = store
+        .update_user_email(user_id, data.email)
+        .map_err(|err| match err {
+            DbError::NotFound => Error::from_status(StatusCode::NOT_FOUND),
+            _ => Error::from_status(StatusCode::INTERNAL_SERVER_ERROR),
+        })?;
+
+    Ok(Json(UpdateEmailOutput {
+        success: true,
+        email: updated.email.unwrap_or_default(),
+    }))
+}
+
+#[handler]
+pub fn get_current_user(
+    Data(pool): Data<&DbPool>,
+    req: &Request,
+) -> Result<Json<CurrentUserOutput>, Error> {
+    let UserId(user_id) = req
+        .extensions()
+        .get::<UserId>()
+        .cloned()
+        .ok_or_else(|| Error::from_status(StatusCode::UNAUTHORIZED))?;
+
+    let mut store = store_from_pool(pool)?;
+
+    let user = store.get_user_by_id(&user_id).map_err(|err| match err {
+        DbError::NotFound => Error::from_status(StatusCode::NOT_FOUND),
+        _ => Error::from_status(StatusCode::INTERNAL_SERVER_ERROR),
+    })?;
+
+    Ok(Json(CurrentUserOutput {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        email_alerts_enabled: user.email_alerts_enabled,
+    }))
+}
+
+#[handler]
+pub fn update_email_alerts(
+    Json(data): Json<UpdateEmailAlertsInput>,
+    Data(pool): Data<&DbPool>,
+    req: &Request,
+) -> Result<Json<UpdateEmailAlertsOutput>, Error> {
+    let UserId(user_id) = req
+        .extensions()
+        .get::<UserId>()
+        .cloned()
+        .ok_or_else(|| Error::from_status(StatusCode::UNAUTHORIZED))?;
+
+    let mut store = store_from_pool(pool)?;
+
+    let updated = store
+        .set_email_alerts_enabled(user_id, data.enabled)
+        .map_err(|err| match err {
+            DbError::NotFound => Error::from_status(StatusCode::NOT_FOUND),
+            _ => Error::from_status(StatusCode::INTERNAL_SERVER_ERROR),
+        })?;
+
+    Ok(Json(UpdateEmailAlertsOutput {
+        success: true,
+        email_alerts_enabled: updated.email_alerts_enabled,
     }))
 }

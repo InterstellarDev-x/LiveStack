@@ -2,6 +2,8 @@ use redis::streams::StreamMaxlen;
 use redis::{Commands, RedisResult};
 
 const BETTERUPTIME: &str = "better-uptime";
+const WEBSITE_ALERTS: &str = "website-alerts";
+const WEBSITE_ALERTS_DLQ: &str = "website-alerts-dlq";
 const STREAMS: &[&str] = &[BETTERUPTIME];
 
 pub mod config;

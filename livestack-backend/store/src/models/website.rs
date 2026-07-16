@@ -15,7 +15,7 @@ pub struct Website {
     pub user_id: String,
 }
 
-#[derive(Debug, DbEnum)]
+#[derive(Debug, DbEnum, PartialEq, Eq, Clone, Copy)]
 #[ExistingTypePath = "WebsiteStatus"]
 #[DbValueStyle = "verbatim"]
 #[derive(Serialize, Deserialize)]
@@ -38,6 +38,22 @@ pub struct WebsiteTick {
     #[diesel(column_name = createdAt)]
     #[serde(rename = "createdAt")]
     pub created_at: NaiveDateTime,
+    pub dns_time_ms: i32,
+    pub connection_time_ms: i32,
+    pub tls_time_ms: i32,
+    pub data_transfer_time_ms: i32,
+    pub waiting_time_ms: i32,
+}
+
+/// Per-phase curl timings for a single website check, in whole milliseconds.
+pub struct NewWebsiteTickTiming {
+    pub dns_time_ms: i32,
+    pub connection_time_ms: i32,
+    pub tls_time_ms: i32,
+    /// Time to first byte: server think-time after the connection was ready.
+    pub waiting_time_ms: i32,
+    /// Time spent streaming the body in after the first byte arrived.
+    pub data_transfer_time_ms: i32,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -186,12 +202,79 @@ impl Store {
         Ok(())
     }
 
+    pub fn get_latest_ticks_by_website_id(
+        &mut self,
+        input_website_id: &str,
+        limit: i64,
+    ) -> Result<Vec<WebsiteTick>, diesel::result::Error> {
+        use crate::schema::website_tick::dsl::*;
+
+        website_tick
+            .filter(website_id.eq(input_website_id))
+            .order(createdAt.desc())
+            .limit(limit)
+            .select(WebsiteTick::as_select())
+            .load::<WebsiteTick>(self.conn())
+    }
+
+    /// The single most recent tick, if any - used to show a monitor's
+    /// current status without pulling a whole history.
+    pub fn get_latest_tick_by_website_id(
+        &mut self,
+        input_website_id: &str,
+    ) -> Result<Option<WebsiteTick>, diesel::result::Error> {
+        use crate::schema::website_tick::dsl::*;
+
+        website_tick
+            .filter(website_id.eq(input_website_id))
+            .order(createdAt.desc())
+            .select(WebsiteTick::as_select())
+            .first(self.conn())
+            .optional()
+    }
+
+    /// All ticks at or after `since` - the caller buckets these into
+    /// whatever uptime windows it needs (e.g. 24h/7d/30d).
+    pub fn get_ticks_since(
+        &mut self,
+        input_website_id: &str,
+        since: NaiveDateTime,
+    ) -> Result<Vec<WebsiteTick>, diesel::result::Error> {
+        use crate::schema::website_tick::dsl::*;
+
+        website_tick
+            .filter(website_id.eq(input_website_id))
+            .filter(createdAt.ge(since))
+            .select(WebsiteTick::as_select())
+            .load::<WebsiteTick>(self.conn())
+    }
+
+    /// Read-only ownership check with no other side effects - used by
+    /// features (e.g. status pages) that need to confirm a website belongs
+    /// to a user without pulling the whole row.
+    pub fn website_belongs_to_user(
+        &mut self,
+        input_website_id: &str,
+        input_user_id: &str,
+    ) -> Result<bool, diesel::result::Error> {
+        use crate::schema::website::dsl::*;
+
+        let owner: Option<String> = website
+            .filter(id.eq(input_website_id))
+            .select(user_id)
+            .first(self.conn())
+            .optional()?;
+
+        Ok(owner.as_deref() == Some(input_user_id))
+    }
+
     pub fn create_website_tick(
         &mut self,
         input_website_id: String,
         input_region_id: String,
         input_response_time_ms: i32,
         input_status: WebsiteStatusEnum,
+        timing: NewWebsiteTickTiming,
     ) -> Result<WebsiteTick, diesel::result::Error> {
         let new_tick = WebsiteTick {
             id: Uuid::new_v4().to_string(),
@@ -200,6 +283,11 @@ impl Store {
             region_id: input_region_id,
             website_id: input_website_id,
             created_at: Utc::now().naive_utc(),
+            dns_time_ms: timing.dns_time_ms,
+            connection_time_ms: timing.connection_time_ms,
+            tls_time_ms: timing.tls_time_ms,
+            waiting_time_ms: timing.waiting_time_ms,
+            data_transfer_time_ms: timing.data_transfer_time_ms,
         };
 
         let response = diesel::insert_into(crate::schema::website_tick::table)

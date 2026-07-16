@@ -1,11 +1,19 @@
-use poem::{EndpointExt, Route, Server, get, listener::TcpListener, post};
+use poem::{EndpointExt, Route, Server, delete, get, listener::TcpListener, patch, post};
 use store::Store;
 
 use crate::{
     middleware::auth::log,
-    routes::user::{signin, signup},
+    routes::ai::chat as ai_chat,
+    routes::incident::{get_user_incidents, get_website_incidents},
+    routes::status_page::{
+        add_status_page_monitor, create_status_page, delete_status_page, get_public_status_page,
+        get_status_page, get_status_pages, remove_status_page_monitor, update_status_page,
+    },
+    routes::user::{get_current_user, signin, signup, update_email, update_email_alerts},
     routes::website::{
-        create_website, delete_website, get_website, get_websites_by_user, update_website,
+        create_website, delete_website, get_website, get_website_ticks, get_website_webhook,
+        get_websites_by_user, regenerate_website_webhook_secret, set_website_webhook,
+        update_website,
     },
 };
 pub mod middleware;
@@ -35,9 +43,50 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .around(log), // middleware
         )
         .at("/website", post(create_website).around(log))
+        .at("/website/:website_id/ticks", get(get_website_ticks).around(log))
+        .at(
+            "/website/:website_id/incidents",
+            get(get_website_incidents).around(log),
+        )
+        .at("/incidents", get(get_user_incidents).around(log))
+        .at("/ai/chat", post(ai_chat).around(log))
+        .at(
+            "/website/:website_id/webhook",
+            get(get_website_webhook)
+                .put(set_website_webhook)
+                .around(log),
+        )
+        .at(
+            "/website/:website_id/webhook/regenerate",
+            post(regenerate_website_webhook_secret).around(log),
+        )
         .at("/websites", get(get_websites_by_user).around(log)) // user comes from the token
         .at("/signup", post(signup))
         .at("/signin", post(signin))
+        .at("/user/email", patch(update_email).around(log))
+        .at("/user/me", get(get_current_user).around(log))
+        .at("/user/notifications", patch(update_email_alerts).around(log))
+        .at(
+            "/status-pages",
+            get(get_status_pages).post(create_status_page).around(log),
+        )
+        .at(
+            "/status-pages/:status_page_id",
+            get(get_status_page)
+                .put(update_status_page)
+                .delete(delete_status_page)
+                .around(log),
+        )
+        .at(
+            "/status-pages/:status_page_id/monitors",
+            post(add_status_page_monitor).around(log),
+        )
+        .at(
+            "/status-pages/:status_page_id/monitors/:website_id",
+            delete(remove_status_page_monitor).around(log),
+        )
+        // public - no auth, intentionally not wrapped in `.around(log)`
+        .at("/public/status-pages/:slug", get(get_public_status_page))
         .data(store_pool);
 
     Ok(Server::new(TcpListener::bind("0.0.0.0:3000"))

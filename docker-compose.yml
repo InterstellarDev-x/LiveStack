@@ -1,0 +1,132 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mysecretpassword}
+      POSTGRES_DB: better-uptime
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Catches outbound mail locally so email-worker has something to talk to
+  # without real SMTP credentials. Web UI at http://localhost:8025.
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "8025:8025"
+      - "1025:1025"
+
+  # One-shot: applies store/migrations then exits. Services below wait on it.
+  migrate:
+    build:
+      context: ./livestack-backend
+      target: migrate
+    environment:
+      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:-mysecretpassword}@postgres:5432/better-uptime
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    build:
+      context: ./livestack-backend
+      target: api
+    environment:
+      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:-mysecretpassword}@postgres:5432/better-uptime
+      JWT_SECRET: ${JWT_SECRET:-change-me}
+      REDIS_URL: redis://redis:6379/
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o}
+    ports:
+      - "3000:3000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  producer:
+    build:
+      context: ./livestack-backend
+      target: producer
+    environment:
+      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:-mysecretpassword}@postgres:5432/better-uptime
+      REDIS_URL: redis://redis:6379/
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  consumer:
+    build:
+      context: ./livestack-backend
+      target: consumer
+    environment:
+      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:-mysecretpassword}@postgres:5432/better-uptime
+      REDIS_URL: redis://redis:6379/
+      REGION_ID: india
+      REGION_NAME: India
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  email-worker:
+    build:
+      context: ./livestack-backend
+      target: email-worker
+    environment:
+      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:-mysecretpassword}@postgres:5432/better-uptime
+      REDIS_URL: redis://redis:6379/
+      SMTP_HOST: mailpit
+      SMTP_USER: livestack
+      SMTP_PASS: livestack
+      SMTP_FROM: alerts@livestack.local
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+
+  webhook-worker:
+    build:
+      context: ./livestack-backend
+      target: webhook-worker
+    environment:
+      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:-mysecretpassword}@postgres:5432/better-uptime
+      REDIS_URL: redis://redis:6379/
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./livestack-frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      - api
+
+volumes:
+  postgres-data:

@@ -4,18 +4,22 @@ use std::{
 };
 
 use messaging::config::StreamService;
+use std::env;
 use store::Store;
 use tokio_cron_scheduler::{Job, JobScheduler};
 
 pub mod util;
 
-const REDIS_URL: &str = "redis://127.0.0.1/";
+const DEFAULT_REDIS_URL: &str = "redis://127.0.0.1/";
 const PRODUCE_INTERVAL_SECONDS: u64 = 180;
 
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    dotenvy::dotenv().ok();
+
+    let redis_url = env::var("REDIS_URL").unwrap_or_else(|_| DEFAULT_REDIS_URL.to_string());
     let store = Arc::new(Mutex::new(Store::default()?));
-    let stream = Arc::new(StreamService::new(REDIS_URL)?);
+    let stream = Arc::new(StreamService::new(&redis_url)?);
 
     let sched = JobScheduler::new().await?;
 

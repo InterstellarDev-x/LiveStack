@@ -9,6 +9,8 @@ serde = { version = "1.0.228" , features = ["derive"]}
 tokio = { version = "1.49.0" , features = ["full"]}
 store = { path = "../store"}
 messaging = {path = "../messaging"}
+ai = { path = "../ai" }
 jsonwebtoken = { version = "10.3.0"  , features = ["aws_lc_rs"]}
 argon2 = { version = "0.5", features = ["std"] }
 dotenvy = "0.15"
+chrono = "0.4.43"

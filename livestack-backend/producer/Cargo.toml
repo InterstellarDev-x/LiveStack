@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+dotenvy = "0.15"
 messaging = {path = "../messaging"}
 tokio-cron-scheduler = "*"
 tokio = { version = "1.49.0" , features = ["full"]}

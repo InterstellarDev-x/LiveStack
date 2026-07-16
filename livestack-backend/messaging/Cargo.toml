@@ -6,3 +6,5 @@ edition = "2024"
 [dependencies]
 redis = { version = "1.0.4" , features = ["streams" , "tokio-comp"]}
 store = { path = "../store"}
+chrono = "0.4.43"
+uuid = { version = "1.20.0", features = ["v4"] }
