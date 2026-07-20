@@ -16,3 +16,5 @@ jsonwebtoken = { version = "10.3.0"  , features = ["aws_lc_rs"]}
 argon2 = { version = "0.5", features = ["std"] }
 dotenvy = "0.15"
 chrono = "0.4.43"
+maxminddb = "0.29.0"
+nettrace = { version = "0.1.0", path = "../nettrace" }

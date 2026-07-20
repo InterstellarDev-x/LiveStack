@@ -36,9 +36,9 @@ export function IncidentList({
   }
 
   return (
-    <ul className="divide-y divide-border rounded-lg border">
+    <ul className="divide-y divide-border border-y">
       {incidents.map((incident) => (
-        <li key={incident.id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 py-3 text-sm">
+        <li key={incident.id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 py-3 text-sm">
           <div className="flex items-center gap-2">
             <OutageBadge ongoing={incident.resolved_at === null} />
             {incident.label && <span className="font-medium break-all">{incident.label}</span>}

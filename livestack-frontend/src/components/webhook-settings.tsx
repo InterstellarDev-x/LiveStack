@@ -86,7 +86,7 @@ export function WebhookSettings({ websiteId }: { websiteId: string }) {
   }
 
   return (
-    <div className="space-y-4 rounded-lg border p-4">
+    <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-sm font-medium">Webhook</h2>
@@ -97,7 +97,7 @@ export function WebhookSettings({ websiteId }: { websiteId: string }) {
         <Switch checked={enabledDraft} onCheckedChange={setEnabledDraft} aria-label="Webhook enabled" />
       </div>
 
-      <div className="flex gap-2">
+      <div className="flex flex-col gap-2 sm:flex-row">
         <Input
           value={urlDraft}
           onChange={(e) => setUrlDraft(e.target.value)}

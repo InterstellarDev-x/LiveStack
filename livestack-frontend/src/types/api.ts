@@ -149,3 +149,13 @@ export interface WebsiteIncidentsOutput {
 export interface UserIncidentsOutput {
   incidents: UserIncident[]
 }
+
+export interface NetworkHop {
+  ttl: number
+  ip: string | null
+  rtt_ms: number | null
+  city: string | null
+  country: string | null
+  lat: number | null
+  lon: number | null
+}

@@ -83,14 +83,14 @@ export function ResponseTimeChart({ ticks }: { ticks: WebsiteTick[] }) {
 
   if (data.length === 0) {
     return (
-      <div className="flex h-48 items-center justify-center rounded-lg border text-sm text-muted-foreground">
+      <div className="flex h-48 items-center justify-center border-y text-sm text-muted-foreground">
         No checks recorded yet.
       </div>
     )
   }
 
   return (
-    <div className="h-48 rounded-lg border p-2">
+    <div className="h-48 border-y py-2">
       <ResponsiveContainer width="100%" height="100%">
         <AreaChart data={data} margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
           <defs>

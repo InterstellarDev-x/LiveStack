@@ -1,0 +1,11 @@
+[package]
+name = "nettrace"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+maxminddb = "0.29.0"
+serde = { version = "1.0.228", features = ["derive"] }
+tokio = { version = "1.49.0", features = ["full"] }
+trippy-core = "0.13.0"
+url = "2.5.8"

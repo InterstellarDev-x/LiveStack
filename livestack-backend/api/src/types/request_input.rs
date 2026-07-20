@@ -1,3 +1,4 @@
+use ai::PendingAction;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
@@ -68,4 +69,14 @@ pub struct AiChatMessageInput {
 pub struct AiChatInput {
     /// Full conversation so far, oldest first; the API is stateless.
     pub messages: Vec<AiChatMessageInput>,
+    /// Mutating actions the user just approved, echoed back verbatim from a
+    /// prior `ConfirmationRequired` event. Empty on a normal turn.
+    #[serde(default)]
+    pub confirmed_actions: Vec<PendingAction>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct NetworkTraceInput {
+    /// A bare host or a full URL; only the host is used.
+    pub target: String,
 }

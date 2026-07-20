@@ -12,6 +12,7 @@ import IncidentsPage from './pages/incidents'
 import LandingPage from './pages/landing'
 import MonitorDetailPage from './pages/monitor-detail'
 import MonitorsPage from './pages/monitors'
+import NetworkToolsPage from './pages/network-tools'
 import PublicStatusPage from './pages/public-status'
 import SettingsPage from './pages/settings'
 import SigninPage from './pages/signin'
@@ -36,6 +37,7 @@ function App() {
           <Route path="status-pages" element={<StatusPagesPage />} />
           <Route path="status-pages/:statusPageId" element={<StatusPageDetailPage />} />
           <Route path="assistant" element={<AssistantPage />} />
+          <Route path="network-tools" element={<NetworkToolsPage />} />
           <Route path="settings" element={<SettingsPage />} />
         </Route>
       </Route>

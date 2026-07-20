@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react"
 import { Link } from "react-router"
+import { Activity, ArrowRight, Plus, RadioTower, Trash2 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -58,50 +59,103 @@ export default function MonitorsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Monitors</h1>
-        <p className="text-sm text-muted-foreground">
-          Websites you're currently keeping an eye on.
-        </p>
+      <div className="border-b pb-6">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <div className="mb-3 inline-flex items-center gap-2 text-xs font-medium text-muted-foreground">
+              <RadioTower className="size-3.5 text-primary" />
+              Production monitors
+            </div>
+            <h1 className="text-3xl font-semibold tracking-tight">Monitors</h1>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+              Track the websites and APIs your organization depends on, then inspect response
+              history, incidents, and notification settings per service.
+            </p>
+          </div>
+
+          <div className="grid min-w-56 grid-cols-2 gap-3">
+            <div>
+              <p className="text-2xl font-semibold">{websites.length}</p>
+              <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                Total
+              </p>
+            </div>
+            <div>
+              <p className="text-2xl font-semibold">{loading ? "..." : "Live"}</p>
+              <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                Checks
+              </p>
+            </div>
+          </div>
+        </div>
       </div>
 
-      <form onSubmit={handleCreate} className="flex gap-2">
-        <Input
-          placeholder="https://example.com"
-          value={url}
-          onChange={(e) => setUrl(e.target.value)}
-          required
-        />
-        <Button type="submit" disabled={creating}>
-          {creating ? "Adding..." : "Add monitor"}
-        </Button>
+      <form onSubmit={handleCreate}>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <Input
+            placeholder="https://api.company.com"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            required
+          />
+          <Button type="submit" disabled={creating} className="shrink-0">
+            <Plus className="size-4" />
+            {creating ? "Adding..." : "Add monitor"}
+          </Button>
+        </div>
       </form>
 
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && (
+        <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          {error}
+        </p>
+      )}
 
       {loading ? (
-        <p className="text-sm text-muted-foreground">Loading monitors...</p>
+        <div className="py-6 text-sm text-muted-foreground">
+          Loading monitors...
+        </div>
       ) : websites.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
-          No monitors yet. Add a URL above to get started.
-        </p>
+        <div className="py-16 text-center">
+          <Activity className="mx-auto size-8 text-primary" />
+          <h2 className="mt-4 text-lg font-semibold">No monitors yet</h2>
+          <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
+            Add your first production URL above. LiveStack will start recording checks and incidents
+            for that service.
+          </p>
+        </div>
       ) : (
-        <ul className="divide-y divide-border rounded-lg border">
+        <ul className="divide-y divide-border border-y">
           {websites.map((site) => (
-            <li key={site.id} className="flex items-center justify-between gap-4 p-4">
-              <Link to={`/monitors/${site.id}`} className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium">{site.url}</p>
-                <p className="text-xs text-muted-foreground">
-                  Added {formatDateTime(site.time_added)}
-                </p>
-              </Link>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => handleDelete(site.id)}
-              >
-                Delete
-              </Button>
+            <li key={site.id} className="py-4">
+              <div className="flex items-center justify-between gap-4">
+                <Link to={`/monitors/${site.id}`} className="min-w-0 flex-1">
+                  <div className="flex items-center gap-3">
+                    <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+                      <Activity className="size-4" />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold">{site.url}</p>
+                      <p className="text-xs text-muted-foreground">
+                        Added {formatDateTime(site.time_added)}
+                      </p>
+                    </div>
+                  </div>
+                </Link>
+                <div className="flex items-center gap-1">
+                  <Button variant="ghost" size="icon" aria-label={`Open ${site.url}`} render={<Link to={`/monitors/${site.id}`} />}>
+                    <ArrowRight className="size-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label={`Delete ${site.url}`}
+                    onClick={() => handleDelete(site.id)}
+                  >
+                    <Trash2 className="size-4" />
+                  </Button>
+                </div>
+              </div>
             </li>
           ))}
         </ul>

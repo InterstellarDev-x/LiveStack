@@ -1,8 +1,23 @@
 //! In-app AI assistant: an agentic loop over the OpenAI chat completions API
-//! whose tools are read-only queries against this user's monitoring data.
+//! whose tools query and, for a small allow-listed set, mutate this user's
+//! monitoring data.
 //!
 //! Security invariant: every tool call runs against the `user_id` the caller
-//! authenticated with — the model can never pick whose data it reads.
+//! authenticated with — the model can never pick whose data it reads or
+//! changes.
+//!
+//! # Mutating tools require confirmation, statelessly
+//!
+//! Every HTTP request is still handled start-to-finish with no server-side
+//! session. So rather than pausing a live task mid-flight, a tool flagged by
+//! [`tools::requires_confirmation`] is never auto-executed: the loop stops
+//! and emits `AgentEvent::ConfirmationRequired` with the proposed
+//! `(name, arguments)` pairs and a server-generated description. The turn
+//! ends there. Nothing runs until the client echoes those exact actions back
+//! as `confirmed_actions` on a later request, at which point they're
+//! executed up front, before the model is called again. See
+//! [`tools::describe_action`] for why the description is generated
+//! server-side rather than trusted from the model's arguments.
 //!
 //! # Loop shape (two loops, not one)
 //!
@@ -50,6 +65,22 @@ pub struct ChatMessage {
     pub content: String,
 }
 
+/// A mutating tool call the model wants to make, awaiting the user's
+/// explicit confirmation before it runs. The backend hands this to the
+/// client on `AgentEvent::ConfirmationRequired`; the client must echo it
+/// back verbatim (as `confirmed_actions` on the next request) for
+/// [`run_agent`] to actually execute it — nothing is ever inferred from a
+/// bare "yes".
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PendingAction {
+    pub name: String,
+    pub arguments: Value,
+    /// Human-readable summary, generated server-side from real data (e.g.
+    /// the website's URL, not just its id) so the confirmation text can't be
+    /// spoofed by whatever the model put in `arguments`.
+    pub description: String,
+}
+
 /// Progress the loop emits while working. `ToolFinished.details` carries the
 /// tool's structured summary (for UI/logs) — intentionally separate from the
 /// `content` the LLM sees. Serializes with a `type` tag so a UI can switch on
@@ -62,6 +93,11 @@ pub enum AgentEvent {
     Thinking,
     ToolStarted { name: String, arguments: Value },
     ToolFinished { name: String, details: Value },
+    /// The model wants to run one or more mutating tools. None of them have
+    /// executed yet — the whole batch is on hold until the client resends
+    /// these exact actions as `confirmed_actions`. Always the last event on
+    /// a stream (like `Reply`): the turn ends here either way.
+    ConfirmationRequired { actions: Vec<PendingAction> },
     Reply { content: String },
     /// The loop failed. Always the last event on a stream.
     Error { message: String },
@@ -124,6 +160,8 @@ list with the site name in bold followed by indented `- Key: value` lines, e.g.:
   1. **google.com**\n     - Status: Up\n     - Latest Response Time: 1660 ms\n     - Monitored Since: 2026-07-13\n\
 For a single fact or diagnosis, a short paragraph is fine — don't force a list.\n\
 - If asked something unrelated to website monitoring or this app, politely decline.\n\
+- To add, change the URL of, or delete a monitor, call the tool directly — the app shows the user \
+a confirmation prompt automatically before anything happens, so don't ask \"are you sure?\" yourself first.\n\
 - All timestamps in the data are UTC. Current UTC time: {now}.",
         now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S")
     )
@@ -139,22 +177,33 @@ pub async fn run_chat(
 ) -> Result<String, AiError> {
     let (steer_tx, steer_rx) = mpsc::unbounded_channel();
     drop(steer_tx); // no live steering in one-shot mode
-    run_agent(pool, user_id, history, steer_rx, None).await
+    run_agent(pool, user_id, history, Vec::new(), steer_rx, None).await
 }
 
 /// Same as [`run_chat`], but reports [`AgentEvent`]s as the loop works —
 /// "thinking", tool start/finish, the final reply — so a caller (typically
 /// an SSE handler) can forward them to the client without waiting for the
-/// whole turn to finish.
+/// whole turn to finish. `confirmed_actions` are mutating tool calls the
+/// user just approved (echoed back from a prior `ConfirmationRequired`
+/// event); pass an empty vec on a normal turn.
 pub async fn run_chat_streaming(
     pool: &DbPool,
     user_id: &str,
     history: Vec<ChatMessage>,
+    confirmed_actions: Vec<PendingAction>,
     events: mpsc::UnboundedSender<AgentEvent>,
 ) -> Result<String, AiError> {
     let (steer_tx, steer_rx) = mpsc::unbounded_channel();
     drop(steer_tx); // no live steering in one-shot HTTP mode (yet)
-    run_agent(pool, user_id, history, steer_rx, Some(events)).await
+    run_agent(
+        pool,
+        user_id,
+        history,
+        confirmed_actions,
+        steer_rx,
+        Some(events),
+    )
+    .await
 }
 
 /// Full agent loop. `inbox` carries steering and follow-up user messages;
@@ -164,6 +213,7 @@ pub async fn run_agent(
     pool: &DbPool,
     user_id: &str,
     history: Vec<ChatMessage>,
+    confirmed_actions: Vec<PendingAction>,
     mut inbox: mpsc::UnboundedReceiver<ChatMessage>,
     events: Option<mpsc::UnboundedSender<AgentEvent>>,
 ) -> Result<String, AiError> {
@@ -196,6 +246,55 @@ pub async fn run_agent(
             let _ = tx.send(event);
         }
     };
+
+    // Actions the user just approved (echoed back from a prior
+    // ConfirmationRequired event) run once, up front, before any model call.
+    // There's no prior `tool_calls` message in this request to attach real
+    // `tool` results to — the approval happened in a previous, now-forgotten
+    // HTTP request — so the outcome is folded in as a plain-language system
+    // note instead of a fabricated tool exchange.
+    if !confirmed_actions.is_empty() {
+        let mut outcomes = Vec::with_capacity(confirmed_actions.len());
+        for action in &confirmed_actions {
+            emit(AgentEvent::ToolStarted {
+                name: action.name.clone(),
+                arguments: action.arguments.clone(),
+            });
+
+            let arguments = action.arguments.to_string();
+            let result = tools::execute(pool, user_id, &action.name, &arguments);
+            let summary = match &result {
+                Ok(ToolOutcome { details, .. }) => {
+                    emit(AgentEvent::ToolFinished {
+                        name: action.name.clone(),
+                        details: details.clone(),
+                    });
+                    format!("- Done: {} ({details})", action.description)
+                }
+                Err(err) => {
+                    emit(AgentEvent::ToolFinished {
+                        name: action.name.clone(),
+                        details: serde_json::json!({ "error": err }),
+                    });
+                    format!("- Failed: {} — {err}", action.description)
+                }
+            };
+            outcomes.push(summary);
+        }
+
+        messages.push(
+            ChatCompletionRequestSystemMessageArgs::default()
+                .content(format!(
+                    "The user just confirmed and the assistant completed the following \
+                     previously-proposed action(s):\n{}\n\nContinue the conversation \
+                     naturally, acknowledging what happened.",
+                    outcomes.join("\n")
+                ))
+                .build()
+                .map_err(|e| AiError::Upstream(e.to_string()))?
+                .into(),
+        );
+    }
 
     // OUTER loop: one iteration per settled reply; re-entered on follow-ups.
     loop {
@@ -254,6 +353,35 @@ pub async fn run_agent(
                     }
                     Err(_) => break content,
                 }
+            }
+
+            // If any call in this response needs confirmation, hold the
+            // *whole* response — including any read-only calls bundled
+            // alongside it. Nothing here has executed yet, so there's no
+            // partial-execution state to reconcile: the model just re-asks
+            // for whatever it still needs on the next turn.
+            if tool_calls
+                .iter()
+                .any(|call| tools::requires_confirmation(&call.function.name))
+            {
+                let mut actions = Vec::with_capacity(tool_calls.len());
+                for call in &tool_calls {
+                    let description = tools::describe_action(
+                        pool,
+                        user_id,
+                        &call.function.name,
+                        &call.function.arguments,
+                    )
+                    .map_err(|e| AiError::Upstream(format!("couldn't prepare confirmation: {e}")))?;
+                    actions.push(PendingAction {
+                        name: call.function.name.clone(),
+                        arguments: serde_json::from_str(&call.function.arguments)
+                            .unwrap_or(Value::Null),
+                        description,
+                    });
+                }
+                emit(AgentEvent::ConfirmationRequired { actions });
+                return Ok(String::new());
             }
 
             // Echo the assistant turn (with its tool calls) back into the

@@ -5,6 +5,7 @@ use crate::{
     middleware::auth::log,
     routes::ai::chat as ai_chat,
     routes::incident::{get_user_incidents, get_website_incidents},
+    routes::network_trace::network_trace,
     routes::status_page::{
         add_status_page_monitor, create_status_page, delete_status_page, get_public_status_page,
         get_status_page, get_status_pages, remove_status_page_monitor, update_status_page,
@@ -33,6 +34,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let store_pool =
         Store::pool().map_err(|err| -> Box<dyn std::error::Error> { Box::new(err) })?;
 
+    // fail fast: the network-trace tool can't geolocate hops without this
+    let geoip_db_path = std::env::var("GEOIP_DB_PATH")
+        .map_err(|_| "GEOIP_DB_PATH must be set (path to a GeoLite2-City.mmdb file)")?;
+    let geoip = std::sync::Arc::new(
+        maxminddb::Reader::open_readfile(&geoip_db_path)
+            .map_err(|err| -> Box<dyn std::error::Error> { Box::new(err) })?,
+    );
+
     // specify the business logic
     let app = Route::new()
         .at(
@@ -50,6 +59,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .at("/incidents", get(get_user_incidents).around(log))
         .at("/ai/chat", post(ai_chat).around(log))
+        .at("/network-trace", post(network_trace).around(log))
         .at(
             "/website/:website_id/webhook",
             get(get_website_webhook)
@@ -87,7 +97,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         // public - no auth, intentionally not wrapped in `.around(log)`
         .at("/public/status-pages/:slug", get(get_public_status_page))
-        .data(store_pool);
+        .data(store_pool)
+        .data(geoip);
 
     Ok(Server::new(TcpListener::bind("0.0.0.0:3000"))
         .name("LiveStack Server") // give it a name to server

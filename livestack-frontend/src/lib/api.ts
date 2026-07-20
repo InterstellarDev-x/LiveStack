@@ -53,7 +53,8 @@ async function* stream<T>(path: string, body?: unknown): AsyncGenerator<T> {
   })
 
   if (!res.ok || !res.body) {
-    throw new ApiError(res.status, `Request to ${path} failed with ${res.status}`)
+    const detail = await res.text().catch(() => "")
+    throw new ApiError(res.status, detail || `Request to ${path} failed with ${res.status}`)
   }
 
   const reader = res.body.getReader()

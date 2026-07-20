@@ -1,15 +1,23 @@
 import { useEffect, useRef, useState } from "react"
-import { Check, Loader2, Send } from "lucide-react"
+import { Check, Download, Loader2, Send } from "lucide-react"
 import Markdown from "react-markdown"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { api } from "@/lib/api"
+import { exportAssistantTranscriptPdf } from "@/lib/transcript-pdf"
 import { cn } from "@/lib/utils"
 
-interface ChatMessage {
+export interface ChatMessage {
   role: "user" | "assistant"
   content: string
+}
+
+/** Mirrors `ai::PendingAction` on the backend (`livestack-backend/ai/src/lib.rs`). */
+interface PendingAction {
+  name: string
+  arguments: unknown
+  description: string
 }
 
 /** Mirrors `ai::AgentEvent` on the backend (`livestack-backend/ai/src/lib.rs`). */
@@ -17,6 +25,7 @@ type AgentEvent =
   | { type: "thinking" }
   | { type: "tool_started"; name: string; arguments: unknown }
   | { type: "tool_finished"; name: string; details: unknown }
+  | { type: "confirmation_required"; actions: PendingAction[] }
   | { type: "reply"; content: string }
   | { type: "error"; message: string }
 
@@ -25,6 +34,9 @@ const TOOL_STATUS_LABELS: Record<string, string> = {
   get_website_metrics: "Analyzing performance metrics…",
   get_incidents: "Looking up incidents…",
   get_status_pages: "Checking status pages…",
+  create_website: "Adding the new monitor…",
+  update_website: "Updating the monitor…",
+  delete_website: "Deleting the monitor…",
 }
 
 function toolStatusLabel(name: string): string {
@@ -41,30 +53,37 @@ export default function AssistantPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState("")
   const [sending, setSending] = useState(false)
+  const [exporting, setExporting] = useState(false)
   // The agent loop's "thinking" / "calling tool X" trail for the turn in
   // flight, oldest first — appended to, never overwritten, so earlier steps
   // stay visible once later ones arrive.
   const [steps, setSteps] = useState<string[]>([])
+  // Mutating action(s) the assistant wants to run, awaiting an explicit
+  // confirm/cancel click before anything actually happens.
+  const [pending, setPending] = useState<PendingAction[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight })
-  }, [messages, sending, steps])
+  }, [messages, sending, steps, pending])
 
-  async function send(content: string) {
-    const trimmed = content.trim()
-    if (!trimmed || sending) return
-
-    const history = [...messages, { role: "user" as const, content: trimmed }]
-    setMessages(history)
-    setInput("")
+  /**
+   * Streams one turn and dispatches its events. Shared by a normal typed
+   * message and a confirmed action replay — both just resend the transcript
+   * (optionally with `confirmedActions`) and react to the same event types.
+   */
+  async function runTurn(history: ChatMessage[], confirmedActions?: PendingAction[]) {
     setSending(true)
     setError(null)
     setSteps([])
+    setPending(null)
 
     try {
-      for await (const event of api.stream<AgentEvent>("/ai/chat", { messages: history })) {
+      for await (const event of api.stream<AgentEvent>("/ai/chat", {
+        messages: history,
+        confirmed_actions: confirmedActions ?? [],
+      })) {
         switch (event.type) {
           case "thinking":
             setSteps((prev) => [...prev, "Thinking…"])
@@ -75,6 +94,9 @@ export default function AssistantPage() {
           case "tool_finished":
             // No line of its own: the started step above turns from a
             // spinner into a checkmark once it's no longer the last step.
+            break
+          case "confirmation_required":
+            setPending(event.actions)
             break
           case "reply":
             setMessages([...history, { role: "assistant", content: event.content }])
@@ -92,8 +114,48 @@ export default function AssistantPage() {
     }
   }
 
+  async function send(content: string) {
+    const trimmed = content.trim()
+    if (!trimmed || sending) return
+
+    const history = [...messages, { role: "user" as const, content: trimmed }]
+    setMessages(history)
+    setInput("")
+    await runTurn(history)
+  }
+
+  async function confirmPending() {
+    if (!pending || sending) return
+    await runTurn(messages, pending)
+  }
+
+  function cancelPending() {
+    if (!pending) return
+    setMessages((prev) => [...prev, { role: "assistant", content: "Okay, I won't do that." }])
+    setPending(null)
+  }
+
+  function handleExportPdf() {
+    if (messages.length === 0 || exporting) return
+    setExporting(true)
+    try {
+      exportAssistantTranscriptPdf(messages)
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  const pendingIsDestructive = pending?.some((action) => action.name === "delete_website") ?? false
+
   return (
     <div className="flex h-[calc(100vh-8rem)] w-full flex-col">
+      <div className="mb-3 flex shrink-0 items-center justify-between gap-3">
+        
+        <Button variant="outline" size="sm" onClick={handleExportPdf} disabled={messages.length === 0 || exporting}>
+          <Download className="size-4" />
+          {exporting ? "Exporting..." : "Export PDF"}
+        </Button>
+      </div>
       <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto">
         {messages.length === 0 && !sending && (
           <div className="flex h-full flex-col items-center justify-center gap-4 text-center">
@@ -157,6 +219,29 @@ export default function AssistantPage() {
             )}
           </div>
         ))}
+
+        {pending && (
+          <div className="w-fit max-w-[85%] space-y-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm">
+            <ul className="space-y-1">
+              {pending.map((action, i) => (
+                <li key={i}>{action.description}</li>
+              ))}
+            </ul>
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                variant={pendingIsDestructive ? "destructive" : "default"}
+                onClick={() => void confirmPending()}
+                disabled={sending}
+              >
+                Confirm
+              </Button>
+              <Button size="sm" variant="outline" onClick={cancelPending} disabled={sending}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        )}
 
         {sending && (
           <div className="w-fit space-y-1 rounded-lg bg-muted px-3 py-2 text-sm text-muted-foreground">

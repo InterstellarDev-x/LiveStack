@@ -29,6 +29,7 @@ fn event_type(event: &AgentEvent) -> &'static str {
         AgentEvent::Thinking => "thinking",
         AgentEvent::ToolStarted { .. } => "tool_started",
         AgentEvent::ToolFinished { .. } => "tool_finished",
+        AgentEvent::ConfirmationRequired { .. } => "confirmation_required",
         AgentEvent::Reply { .. } => "reply",
         AgentEvent::Error { .. } => "error",
     }
@@ -72,8 +73,12 @@ pub async fn chat(Data(pool): Data<&DbPool>, req: &Request, Json(input): Json<Ai
     // sender to report a terminal `Error` event after that happens.
     let error_tx = tx.clone();
 
+    let confirmed_actions = input.confirmed_actions;
+
     tokio::spawn(async move {
-        if let Err(err) = ai::run_chat_streaming(&pool, &user_id, history, tx).await {
+        if let Err(err) =
+            ai::run_chat_streaming(&pool, &user_id, history, confirmed_actions, tx).await
+        {
             eprintln!("ai chat error: {err}");
             let _ = error_tx.send(AgentEvent::Error {
                 message: client_facing_message(&err).to_string(),

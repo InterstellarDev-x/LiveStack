@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react"
+import { BellRing, Mail, Save, Settings } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -50,26 +51,46 @@ export default function SettingsPage() {
   }
 
   if (loading) {
-    return <p className="text-sm text-muted-foreground">Loading settings...</p>
+    return (
+      <div className="py-6 text-sm text-muted-foreground">
+        Loading settings...
+      </div>
+    )
   }
 
   if (!user) {
-    return <p className="text-sm text-destructive">{error ?? "Couldn't load account."}</p>
+    return (
+      <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+        {error ?? "Couldn't load account."}
+      </p>
+    )
   }
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">Settings</h1>
+      <div className="border-b pb-6">
+        <div className="mb-3 inline-flex items-center gap-2 text-xs font-medium text-muted-foreground">
+          <Settings className="size-3.5 text-primary" />
+          Workspace preferences
+        </div>
+        <h1 className="text-3xl font-semibold tracking-tight">Settings</h1>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+          Configure where LiveStack sends status-change alerts for your production monitors.
+        </p>
+      </div>
 
-      <div className="space-y-4 rounded-lg border p-4">
+      <section className="space-y-5">
         <div>
-          <h2 className="text-sm font-medium">Notification email</h2>
+          <div className="flex items-center gap-2">
+            <Mail className="size-4 text-primary" />
+            <h2 className="text-base font-semibold">Notification email</h2>
+          </div>
           <p className="text-sm text-muted-foreground">
             Used for status alerts across all of your monitors.
           </p>
         </div>
 
-        <div className="flex gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row">
           <Input
             type="email"
             value={emailDraft}
@@ -77,13 +98,17 @@ export default function SettingsPage() {
             placeholder="you@example.com"
           />
           <Button onClick={handleSaveEmail} disabled={savingEmail}>
+            <Save className="size-4" />
             {savingEmail ? "Saving..." : "Save"}
           </Button>
         </div>
 
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-4 border-y py-4">
           <div>
-            <h2 className="text-sm font-medium">Email alerts</h2>
+            <div className="flex items-center gap-2">
+              <BellRing className="size-4 text-primary" />
+              <h2 className="text-sm font-semibold">Email alerts</h2>
+            </div>
             <p className="text-sm text-muted-foreground">
               Send an email to the address above on every status change.
             </p>
@@ -96,7 +121,7 @@ export default function SettingsPage() {
         </div>
 
         {error && <p className="text-sm text-destructive">{error}</p>}
-      </div>
+      </section>
     </div>
   )
 }
