@@ -90,6 +90,11 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts
 
+      - name: Debug key fingerprint (temporary, remove once auth works)
+        run: |
+          echo "user=[${{ secrets.DEPLOY_USER }}] host=[${{ secrets.DEPLOY_HOST }}]"
+          ssh-keygen -lf ~/.ssh/deploy_key || echo "could not read key as a private key file"
+
       - name: Copy backend binaries
         run: |
           chmod +x backend-binaries/*
