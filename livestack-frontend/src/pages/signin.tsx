@@ -1,8 +1,6 @@
 import { useState, type FormEvent } from "react"
 import { Link, useNavigate } from "react-router"
-import { ArrowRight, CheckCircle2, Gauge, LockKeyhole, RadioTower } from "lucide-react"
-
-import { BrandMark } from "@/components/brand-mark"
+import { Activity, ArrowRight, CheckCircle2, Gauge, LockKeyhole, RadioTower } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ApiError, api } from "@/lib/api"
@@ -43,7 +41,9 @@ export default function SigninPage() {
       <div className="mx-auto grid min-h-svh w-full max-w-6xl lg:grid-cols-[0.95fr_1.05fr]">
         <section className="flex flex-col px-4 py-6 sm:px-8">
           <Link to="/" className="flex w-fit items-center gap-2 text-sm font-semibold">
-            <BrandMark />
+            <span className="flex size-8 items-center justify-center rounded-md bg-primary text-primary-foreground">
+              <Activity className="size-4" />
+            </span>
             LiveStack
           </Link>
 

@@ -62,7 +62,7 @@ export default function NetworkToolsPage() {
       {error && <p className="text-sm text-destructive">{error}</p>}
 
       {hops.length > 0 && (
-        <div className="overflow-hidden rounded-lg border">
+        <div className="overflow-x-auto rounded-lg border">
           <table className="w-full text-sm">
             <thead className="border-b bg-muted/50 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">
               <tr>

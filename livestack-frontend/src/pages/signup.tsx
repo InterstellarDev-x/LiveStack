@@ -1,8 +1,6 @@
 import { useState, type FormEvent } from "react"
 import { Link, useNavigate } from "react-router"
-import { ArrowRight, BellRing, CheckCircle2, Globe, RadioTower, ShieldCheck } from "lucide-react"
-
-import { BrandMark } from "@/components/brand-mark"
+import { Activity, ArrowRight, BellRing, CheckCircle2, Globe, RadioTower, ShieldCheck } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { api } from "@/lib/api"
@@ -54,7 +52,9 @@ export default function SignupPage() {
 
             <div className="relative flex w-full flex-col justify-between">
               <Link to="/" className="flex w-fit items-center gap-2 text-sm font-semibold">
-                <BrandMark />
+                <span className="flex size-8 items-center justify-center rounded-md bg-primary text-primary-foreground">
+                  <Activity className="size-4" />
+                </span>
                 LiveStack
               </Link>
 
@@ -104,7 +104,9 @@ export default function SignupPage() {
 
         <section className="flex flex-col px-4 py-6 sm:px-8">
           <Link to="/" className="flex w-fit items-center gap-2 text-sm font-semibold lg:hidden">
-            <BrandMark />
+            <span className="flex size-8 items-center justify-center rounded-md bg-primary text-primary-foreground">
+              <Activity className="size-4" />
+            </span>
             LiveStack
           </Link>
 
