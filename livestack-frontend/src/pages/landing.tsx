@@ -1,6 +1,5 @@
 import { Navigate, Link } from "react-router"
 import {
-  Activity,
   ArrowRight,
   BellRing,
   Bot,
@@ -14,6 +13,7 @@ import {
   Webhook,
 } from "lucide-react"
 
+import { BrandMark } from "@/components/brand-mark"
 import { Button } from "@/components/ui/button"
 import { StatusBadge } from "@/components/status-badge"
 import { useAuth } from "@/lib/auth"
@@ -77,9 +77,7 @@ export default function LandingPage() {
       <header className="sticky top-0 z-20 border-b bg-background/85 backdrop-blur">
         <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between px-4">
           <Link to="/" className="flex items-center gap-2 text-sm font-semibold">
-            <span className="flex size-8 items-center justify-center rounded-md bg-primary text-primary-foreground">
-              <Activity className="size-4" />
-            </span>
+            <BrandMark />
             LiveStack
           </Link>
           <nav className="flex items-center gap-2">

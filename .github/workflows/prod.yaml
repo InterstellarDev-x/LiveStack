@@ -1,0 +1,121 @@
+name: Deploy to production
+
+on:
+  push:
+    branches: [main]
+
+env:
+  VITE_API_BASE: https://api.livestack.build-ai.me
+  DEPLOY_PATH: /home/azureuser/LiveStack
+
+jobs:
+  build-backend:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install native build deps (bundled libpq / vendored openssl still need a C toolchain)
+        run: sudo apt-get update && sudo apt-get install -y build-essential cmake perl pkg-config
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            livestack-backend/target
+          key: cargo-${{ runner.os }}-${{ hashFiles('livestack-backend/Cargo.lock') }}
+          restore-keys: cargo-${{ runner.os }}-
+
+      - name: Build release binaries
+        working-directory: livestack-backend
+        run: cargo build --release --bin api --bin producer --bin consumer --bin email-worker --bin webhook-worker
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: backend-binaries
+          path: |
+            livestack-backend/target/release/api
+            livestack-backend/target/release/producer
+            livestack-backend/target/release/consumer
+            livestack-backend/target/release/email-worker
+            livestack-backend/target/release/webhook-worker
+
+  build-frontend:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: actions/cache@v4
+        with:
+          path: livestack-frontend/node_modules
+          key: npm-${{ runner.os }}-${{ hashFiles('livestack-frontend/bun.lock') }}
+
+      - name: Install deps
+        working-directory: livestack-frontend
+        run: npm install
+
+      - name: Build
+        working-directory: livestack-frontend
+        run: npm run build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: livestack-frontend/dist
+
+  deploy:
+    needs: [build-backend, build-frontend]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: backend-binaries
+          path: backend-binaries
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend-dist
+
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Copy backend binaries
+        run: |
+          chmod +x backend-binaries/*
+          scp -i ~/.ssh/deploy_key backend-binaries/* \
+            "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:${{ env.DEPLOY_PATH }}/livestack-backend/target/release/"
+
+      - name: Copy frontend build
+        run: |
+          rsync -az --delete -e "ssh -i ~/.ssh/deploy_key" frontend-dist/ \
+            "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:/tmp/frontend-dist-new/"
+
+      - name: Run migrations and restart services
+        run: |
+          ssh -i ~/.ssh/deploy_key "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" '
+            set -e
+            source "$HOME/.cargo/env"
+            cd '"${{ env.DEPLOY_PATH }}"'/livestack-backend/store
+            diesel migration run --database-url "$(grep DATABASE_URL ../.env | cut -d= -f2-)"
+
+            sudo rm -rf /var/www/livestack.build-ai.me.new
+            sudo cp -r /tmp/frontend-dist-new /var/www/livestack.build-ai.me.new
+            sudo chown -R www-data:www-data /var/www/livestack.build-ai.me.new
+            sudo rm -rf /var/www/livestack.build-ai.me
+            sudo mv /var/www/livestack.build-ai.me.new /var/www/livestack.build-ai.me
+            rm -rf /tmp/frontend-dist-new
+
+            pm2 reload api producer consumer webhook-worker
+            pm2 reload email-worker || true
+          '

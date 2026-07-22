@@ -1,6 +1,7 @@
 import { Outlet, useNavigate } from "react-router"
-import { Activity, LogOut } from "lucide-react"
+import { LogOut } from "lucide-react"
 
+import { BrandMark } from "@/components/brand-mark"
 import { AppSidebar } from "@/components/app-sidebar"
 import { Button } from "@/components/ui/button"
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
@@ -15,9 +16,7 @@ export function Layout() {
       <AppSidebar />
       <SidebarInset className="bg-background">
         <header className="sticky top-0 z-10 flex h-14 shrink-0 items-center gap-3 border-b bg-background/85 px-4 backdrop-blur">
-          <div className="flex size-8 items-center justify-center rounded-md bg-foreground text-background">
-            <Activity className="size-4" />
-          </div>
+          <BrandMark />
           <div>
             <span className="text-sm font-semibold">LiveStack</span>
             <p className="text-xs text-muted-foreground">Production operations</p>
