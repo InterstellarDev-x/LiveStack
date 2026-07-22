@@ -124,6 +124,9 @@ jobs:
             mv /tmp/backend-binaries-new/* '"${{ env.DEPLOY_PATH }}"'/livestack-backend/target/release/
             rm -rf /tmp/backend-binaries-new
 
-            pm2 reload api producer consumer webhook-worker
+            pm2 reload api
+            pm2 reload producer
+            pm2 reload consumer
+            pm2 reload webhook-worker
             pm2 reload email-worker || true
           '
