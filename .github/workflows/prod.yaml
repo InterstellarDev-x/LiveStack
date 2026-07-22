@@ -90,16 +90,12 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts
 
-      - name: Debug key fingerprint (temporary, remove once auth works)
-        run: |
-          echo "user=[${{ secrets.DEPLOY_USER }}] host=[${{ secrets.DEPLOY_HOST }}]"
-          ssh-keygen -lf ~/.ssh/deploy_key || echo "could not read key as a private key file"
-
       - name: Copy backend binaries
         run: |
           chmod +x backend-binaries/*
+          ssh -i ~/.ssh/deploy_key "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" 'rm -rf /tmp/backend-binaries-new && mkdir -p /tmp/backend-binaries-new'
           scp -i ~/.ssh/deploy_key backend-binaries/* \
-            "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:${{ env.DEPLOY_PATH }}/livestack-backend/target/release/"
+            "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:/tmp/backend-binaries-new/"
 
       - name: Copy frontend build
         run: |
@@ -120,6 +116,13 @@ jobs:
             sudo rm -rf /var/www/livestack.build-ai.me
             sudo mv /var/www/livestack.build-ai.me.new /var/www/livestack.build-ai.me
             rm -rf /tmp/frontend-dist-new
+
+            # atomic rename over the running binaries avoids ETXTBSY (cannot
+            # open a currently-executing file for writing, but renaming a new
+            # file over it is fine)
+            chmod +x /tmp/backend-binaries-new/*
+            mv /tmp/backend-binaries-new/* '"${{ env.DEPLOY_PATH }}"'/livestack-backend/target/release/
+            rm -rf /tmp/backend-binaries-new
 
             pm2 reload api producer consumer webhook-worker
             pm2 reload email-worker || true
