@@ -124,6 +124,11 @@ jobs:
             mv /tmp/backend-binaries-new/* '"${{ env.DEPLOY_PATH }}"'/livestack-backend/target/release/
             rm -rf /tmp/backend-binaries-new
 
+            # raw sockets for nettrace/traceroute require this capability;
+            # it lives on the file, so it must be reapplied after every
+            # binary replacement above
+            sudo setcap cap_net_raw+ep '"${{ env.DEPLOY_PATH }}"'/livestack-backend/target/release/api
+
             pm2 reload api
             pm2 reload producer
             pm2 reload consumer
