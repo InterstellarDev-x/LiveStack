@@ -69,8 +69,38 @@ jobs:
           name: frontend-dist
           path: livestack-frontend/dist
 
+  build-gateway:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: actions/cache@v4
+        with:
+          path: channel-gateway/node_modules
+          key: npm-gateway-${{ runner.os }}-${{ hashFiles('channel-gateway/package-lock.json') }}
+
+      - name: Install deps
+        working-directory: channel-gateway
+        run: npm ci
+
+      - name: Build
+        working-directory: channel-gateway
+        run: npm run build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gateway-dist
+          path: |
+            channel-gateway/dist
+            channel-gateway/package.json
+            channel-gateway/package-lock.json
+
   deploy:
-    needs: [build-backend, build-frontend]
+    needs: [build-backend, build-frontend, build-gateway]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/download-artifact@v4
@@ -82,6 +112,11 @@ jobs:
         with:
           name: frontend-dist
           path: frontend-dist
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: gateway-dist
+          path: gateway-dist
 
       - name: Set up SSH
         run: |
@@ -101,6 +136,11 @@ jobs:
         run: |
           rsync -az --delete -e "ssh -i ~/.ssh/deploy_key" frontend-dist/ \
             "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:/tmp/frontend-dist-new/"
+
+      - name: Copy channel-gateway build
+        run: |
+          rsync -az --delete -e "ssh -i ~/.ssh/deploy_key" gateway-dist/ \
+            "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:/tmp/channel-gateway-new/"
 
       - name: Run migrations and restart services
         run: |
@@ -134,4 +174,21 @@ jobs:
             pm2 reload consumer
             pm2 reload webhook-worker
             pm2 reload email-worker || true
+
+            # channel-gateway/.env lives only on the server (TELEGRAM_BOT_TOKEN,
+            # INTERNAL_API_SECRET) and is never touched here - only dist/ and
+            # the package files are replaced.
+            mkdir -p '"${{ env.DEPLOY_PATH }}"'/channel-gateway
+            rm -rf '"${{ env.DEPLOY_PATH }}"'/channel-gateway/dist
+            cp -r /tmp/channel-gateway-new/dist '"${{ env.DEPLOY_PATH }}"'/channel-gateway/dist
+            cp /tmp/channel-gateway-new/package.json /tmp/channel-gateway-new/package-lock.json \
+              '"${{ env.DEPLOY_PATH }}"'/channel-gateway/
+            rm -rf /tmp/channel-gateway-new
+
+            cd '"${{ env.DEPLOY_PATH }}"'/channel-gateway
+            npm install --omit=dev
+
+            pm2 describe channel-gateway > /dev/null 2>&1 \
+              && pm2 reload channel-gateway \
+              || pm2 start dist/index.js --name channel-gateway --cwd '"${{ env.DEPLOY_PATH }}"'/channel-gateway
           '
