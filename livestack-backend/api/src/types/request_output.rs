@@ -58,6 +58,10 @@ pub struct SignInpOutput {
 pub struct SetWebsiteWebhookOutput {
     pub success: bool,
     pub webhook_url: Option<String>,
+    /// The signing secret, which is generated on the first save for a website.
+    /// Without it here the UI couldn't show a freshly-created secret until the
+    /// page was reloaded.
+    pub webhook_secret: Option<String>,
     pub webhook_enabled: bool,
 }
 

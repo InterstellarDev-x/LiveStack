@@ -126,7 +126,6 @@ impl std::fmt::Display for AiError {
 impl std::error::Error for AiError {}
 
 /// Tool-call budget per user turn (resets whenever new user input arrives).
-/// The assistant never mutates anything, so this only bounds data gathering.
 const MAX_TOOL_ROUNDS: usize = 6;
 /// Public so channel integrations (which persist their own history between
 /// messages) can cap it the same way this crate does internally.
@@ -241,9 +240,17 @@ pub async fn run_agent(
     if history.is_empty() {
         return Err(AiError::BadInput("empty message history".into()));
     }
-    if history.len() > MAX_HISTORY_MESSAGES {
-        return Err(AiError::BadInput("conversation too long".into()));
-    }
+
+    // Drop the oldest turns rather than rejecting the request. Both callers
+    // grow their history until it crosses this bound — the web UI resends the
+    // whole transcript, and a linked channel persists its own — so erroring
+    // here didn't cap anything, it just broke the conversation permanently at
+    // message 41 with no way for the user to recover.
+    let history = if history.len() > MAX_HISTORY_MESSAGES {
+        history[history.len() - MAX_HISTORY_MESSAGES..].to_vec()
+    } else {
+        history
+    };
 
     let mut messages: Vec<ChatCompletionRequestMessage> = Vec::with_capacity(history.len() + 1);
     messages.push(

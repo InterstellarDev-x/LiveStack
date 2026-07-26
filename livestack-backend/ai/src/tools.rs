@@ -31,7 +31,7 @@ use async_openai::{
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
-use store::{DbPool, Store, models::website::WebsiteStatusEnum};
+use store::{DbPool, Store, models::website::WebsiteStatusEnum, url_guard};
 
 const MAX_RAW_TICKS: usize = 30;
 const MAX_METRIC_HOURS: i64 = 168; // one week
@@ -419,13 +419,12 @@ fn create_website(
     user_id: &str,
     args: CreateWebsiteArgs,
 ) -> Result<ToolOutcome, String> {
-    let url = args.url.trim();
-    if !(url.starts_with("http://") || url.starts_with("https://")) {
-        return Err("url must start with http:// or https://".to_string());
-    }
+    // The same guard the HTTP route uses, so a monitor created by the
+    // assistant can't be a target the API would have rejected.
+    let url = url_guard::normalize_monitor_url(&args.url).map_err(|e| e.message().to_string())?;
 
     let website = store
-        .create_website(user_id.to_string(), url.to_string())
+        .create_website(user_id.to_string(), url)
         .map_err(|e| e.to_string())?;
 
     Ok(ToolOutcome {
@@ -439,13 +438,10 @@ fn update_website(
     user_id: &str,
     args: UpdateWebsiteArgs,
 ) -> Result<ToolOutcome, String> {
-    let url = args.url.trim();
-    if !(url.starts_with("http://") || url.starts_with("https://")) {
-        return Err("url must start with http:// or https://".to_string());
-    }
+    let url = url_guard::normalize_monitor_url(&args.url).map_err(|e| e.message().to_string())?;
 
     let website = store
-        .update_by_id(args.website_id, url.to_string(), user_id)
+        .update_by_id(args.website_id, url, user_id)
         .map_err(|e| match e {
             store::DbError::NotFound => "no such website for this user".to_string(),
             other => other.to_string(),

@@ -100,6 +100,8 @@ pub async fn channel_ai_reply(
         role: "assistant".to_string(),
         content: reply.clone(),
     });
+    // Keep only the most recent turns, so the stored transcript stays within
+    // what `run_chat_direct` will send upstream.
     if history.len() > MAX_HISTORY_MESSAGES {
         let drop = history.len() - MAX_HISTORY_MESSAGES;
         history.drain(0..drop);

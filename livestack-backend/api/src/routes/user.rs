@@ -13,7 +13,14 @@ use jsonwebtoken::{EncodingKey, Header, encode};
 use poem::{Error, Request, handler, web::Data};
 use poem::{http::StatusCode, web::Json};
 use serde::{Deserialize, Serialize};
-use store::{DbError, DbPool, Store};
+use store::{DatabaseErrorKind, DbError, DbPool, Store};
+
+/// Long enough to be worth having, short enough not to lock anyone out.
+const MIN_PASSWORD_LEN: usize = 8;
+const MAX_USERNAME_LEN: usize = 64;
+/// Argon2 hashes the whole input, so a very long password is a cheap way to
+/// make signup expensive for the server.
+const MAX_PASSWORD_LEN: usize = 256;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Claims {
@@ -25,38 +32,66 @@ fn store_from_pool(pool: &DbPool) -> Result<Store, Error> {
     Store::from_pool(pool).map_err(|_| Error::from_status(StatusCode::SERVICE_UNAVAILABLE))
 }
 
+fn rejected(message: &str) -> Json<SignUpOutput> {
+    Json(SignUpOutput {
+        success: false,
+        message: message.to_string(),
+    })
+}
+
+/// Rejects credentials that can't work before any hashing or database work
+/// happens. Returns the message to show the user, or `None` if they're fine.
+fn validate_credentials(username: &str, password: &str) -> Option<&'static str> {
+    if username.is_empty() {
+        return Some("Username must not be empty");
+    }
+    if username.len() > MAX_USERNAME_LEN {
+        return Some("Username is too long");
+    }
+    if password.len() < MIN_PASSWORD_LEN {
+        return Some("Password must be at least 8 characters");
+    }
+    if password.len() > MAX_PASSWORD_LEN {
+        return Some("Password is too long");
+    }
+    None
+}
+
 #[handler]
 pub fn signup(
     Json(data): Json<SignupInput>,
     Data(pool): Data<&DbPool>,
 ) -> Result<Json<SignUpOutput>, Error> {
+    let username = data.username.trim().to_string();
+
+    if let Some(message) = validate_credentials(&username, &data.password) {
+        return Ok(rejected(message));
+    }
+
     let mut store = store_from_pool(pool)?;
 
-    match store.is_user_exist(&data.username) {
-        Ok(true) => Ok(Json(SignUpOutput {
-            success: false,
-            message: "User already registerd".into(),
-        })),
+    match store.is_user_exist(&username) {
+        Ok(true) => Ok(rejected("User already registered")),
         Ok(false) => {
             // never store the raw password, only an argon2 hash
             let password_hash = hash_password(&data.password)
                 .map_err(|_| Error::from_status(StatusCode::INTERNAL_SERVER_ERROR))?;
 
-            match store.create_user(data.username, password_hash) {
+            match store.create_user(username, password_hash) {
                 Ok(u) => Ok(Json(SignUpOutput {
                     success: true,
-                    message: format!("Successfully signed up witth user_id {}", u.id),
+                    message: format!("Successfully signed up with user_id {}", u.id),
                 })),
-                Err(_) => Ok(Json(SignUpOutput {
-                    success: false,
-                    message: "Internal Server Error".into(),
-                })),
+                // The check above races another signup for the same name; the
+                // unique index is what actually decides, so a violation here
+                // means "taken", not a server fault.
+                Err(DbError::DatabaseError(DatabaseErrorKind::UniqueViolation, _)) => {
+                    Ok(rejected("User already registered"))
+                }
+                Err(_) => Ok(rejected("Internal Server Error")),
             }
         }
-        Err(_) => Ok(Json(SignUpOutput {
-            success: false,
-            message: "Internal Server Error".into(),
-        })),
+        Err(_) => Ok(rejected("Internal Server Error")),
     }
 }
 
@@ -67,8 +102,11 @@ pub fn signin(
 ) -> Result<Json<SignInpOutput>, Error> {
     let mut store = store_from_pool(pool)?;
 
+    // Trimmed to match how signup stores it.
+    let username = data.username.trim().to_string();
+
     let user = store
-        .get_user_by_username(&data.username)
+        .get_user_by_username(&username)
         .map_err(|_| Error::from_status(StatusCode::INTERNAL_SERVER_ERROR))?
         // same 401 for unknown user and wrong password, so usernames can't be enumerated
         .ok_or_else(|| Error::from_status(StatusCode::UNAUTHORIZED))?;

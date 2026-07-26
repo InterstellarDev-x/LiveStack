@@ -12,9 +12,26 @@ pub async fn internal_auth<E: Endpoint>(next: E, req: Request) -> Result<Respons
         .and_then(|value| value.to_str().ok())
         .ok_or_else(|| Error::from_status(StatusCode::UNAUTHORIZED))?;
 
-    if provided != internal_secret() {
+    if !secrets_match(provided, internal_secret()) {
         return Err(Error::from_status(StatusCode::UNAUTHORIZED));
     }
 
     Ok(next.call(req).await?.into_response())
+}
+
+/// Compares in time independent of how many bytes match, so the secret can't
+/// be recovered a byte at a time by timing rejected requests. (The length is
+/// still observable, as with any such comparison.)
+fn secrets_match(provided: &str, expected: &str) -> bool {
+    let (provided, expected) = (provided.as_bytes(), expected.as_bytes());
+
+    if provided.len() != expected.len() {
+        return false;
+    }
+
+    provided
+        .iter()
+        .zip(expected)
+        .fold(0u8, |differences, (a, b)| differences | (a ^ b))
+        == 0
 }

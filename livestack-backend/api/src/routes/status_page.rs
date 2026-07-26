@@ -4,10 +4,7 @@ use poem::{
     http::StatusCode,
     web::{Data, Json, Path},
 };
-use store::{
-    DatabaseErrorKind, DbError, DbPool, Store,
-    models::website::{WebsiteStatusEnum, WebsiteTick},
-};
+use store::{DatabaseErrorKind, DbError, DbPool, Store, models::website::WebsiteStatusEnum};
 
 use crate::{
     middleware::auth::UserId,
@@ -230,21 +227,22 @@ pub fn remove_status_page_monitor(
     Ok(Json(StatusPageActionOutput { success: true }))
 }
 
-/// Share of ticks at or after `since` that are `Up`; `None` if there were no
-/// ticks in that window at all (not the same as 0% uptime).
-fn uptime_ratio(ticks: &[WebsiteTick], since: chrono::NaiveDateTime) -> Option<f64> {
-    let relevant: Vec<&WebsiteTick> = ticks.iter().filter(|t| t.created_at >= since).collect();
+/// Share of checks since `since` that were `Up`; `None` if there were no
+/// checks in that window at all (not the same as 0% uptime).
+fn uptime_percent(
+    store: &mut Store,
+    website_id: &str,
+    since: chrono::NaiveDateTime,
+) -> Result<Option<f64>, Error> {
+    let (total, up) = store
+        .count_ticks_since(website_id, since)
+        .map_err(map_db_error)?;
 
-    if relevant.is_empty() {
-        return None;
-    }
-
-    let up = relevant
-        .iter()
-        .filter(|t| t.status == WebsiteStatusEnum::Up)
-        .count();
-
-    Some(up as f64 / relevant.len() as f64 * 100.0)
+    Ok(if total == 0 {
+        None
+    } else {
+        Some(up as f64 / total as f64 * 100.0)
+    })
 }
 
 #[handler]
@@ -278,9 +276,9 @@ pub fn get_public_status_page(
             .map(|tick| tick.status)
             .unwrap_or(WebsiteStatusEnum::Unknown);
 
-        let ticks = store
-            .get_ticks_since(&monitor.website_id, since_30d)
-            .map_err(map_db_error)?;
+        let uptime_24h = uptime_percent(&mut store, &monitor.website_id, since_24h)?;
+        let uptime_7d = uptime_percent(&mut store, &monitor.website_id, since_7d)?;
+        let uptime_30d = uptime_percent(&mut store, &monitor.website_id, since_30d)?;
 
         // Anything still open plus the last 30 days, labelled with the
         // monitor's public display name rather than its real URL.
@@ -301,9 +299,9 @@ pub fn get_public_status_page(
         monitors.push(PublicStatusPageMonitorOutput {
             display_name: monitor.display_name,
             status,
-            uptime_24h: uptime_ratio(&ticks, since_24h),
-            uptime_7d: uptime_ratio(&ticks, since_7d),
-            uptime_30d: uptime_ratio(&ticks, since_30d),
+            uptime_24h,
+            uptime_7d,
+            uptime_30d,
         });
     }
 

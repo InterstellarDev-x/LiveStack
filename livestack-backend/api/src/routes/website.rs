@@ -16,6 +16,7 @@ use poem::{
 use store::{
     DbError, DbPool, Store,
     models::website::{Website, WebsiteWithLatestTick},
+    url_guard::{self, UrlError},
 };
 
 fn store_from_pool(pool: &DbPool) -> Result<Store, Error> {
@@ -35,6 +36,12 @@ fn map_db_error(err: DbError) -> Error {
         DbError::NotFound => Error::from_status(StatusCode::NOT_FOUND),
         _ => Error::from_status(StatusCode::INTERNAL_SERVER_ERROR),
     }
+}
+
+/// 400 with the reason, so the UI can tell the user what to fix rather than
+/// showing a generic failure.
+fn map_url_error(err: UrlError) -> Error {
+    Error::from_string(err.message(), StatusCode::BAD_REQUEST)
 }
 
 fn map_website_with_tick_to_output(website: WebsiteWithLatestTick) -> WebsiteOutputWithTick {
@@ -103,11 +110,15 @@ pub fn create_website(
     req: &Request,
 ) -> Result<Json<CreateWebsiteOutput>, Error> {
     let user_id = authenticated_user(req)?;
+
+    // Validated before it reaches the database: an unparseable or internal
+    // URL would otherwise be stored and then fetched every 3 minutes by the
+    // check consumer forever.
+    let url = url_guard::normalize_monitor_url(&data.url).map_err(map_url_error)?;
+
     let mut store = store_from_pool(pool)?;
 
-    let response = store
-        .create_website(user_id, data.url)
-        .map_err(map_db_error)?;
+    let response = store.create_website(user_id, url).map_err(map_db_error)?;
 
     Ok(Json(CreateWebsiteOutput {
         success: true,
@@ -143,12 +154,13 @@ pub fn update_website(
     req: &Request,
 ) -> Result<Json<WebsiteOutput>, Error> {
     let user_id = authenticated_user(req)?;
+
+    let url = url_guard::normalize_monitor_url(&data.url).map_err(map_url_error)?;
+
     let mut store = store_from_pool(pool)?;
 
-    // should have regex that match for url if pass then move ahead
-
     let updated = store
-        .update_by_id(website_id, data.url, &user_id)
+        .update_by_id(website_id, url, &user_id)
         .map_err(map_db_error)?;
 
     Ok(Json(map_website_to_output(updated)))
@@ -162,15 +174,31 @@ pub fn set_website_webhook(
     req: &Request,
 ) -> Result<Json<SetWebsiteWebhookOutput>, Error> {
     let user_id = authenticated_user(req)?;
+
+    // `None` (and a blank string, which the UI sends as None) clears the
+    // webhook; anything else has to be a URL this server is willing to POST to.
+    let webhook_url = match data.webhook_url.as_deref().map(str::trim) {
+        None | Some("") => None,
+        Some(url) => {
+            url_guard::validate_webhook_url(url).map_err(map_url_error)?;
+            Some(url.to_string())
+        }
+    };
+
     let mut store = store_from_pool(pool)?;
 
     let config = store
-        .upsert_website_webhook(website_id, &user_id, data.webhook_url, data.webhook_enabled)
+        .upsert_website_webhook(website_id, &user_id, webhook_url, data.webhook_enabled)
         .map_err(map_db_error)?;
 
     Ok(Json(SetWebsiteWebhookOutput {
         success: true,
         webhook_url: config.webhook_url,
+        // Returned so the UI can show the signing secret straight after the
+        // first save, instead of only after a page reload — it's generated
+        // server-side on that first upsert and the client has no other way
+        // to learn it.
+        webhook_secret: config.webhook_secret,
         webhook_enabled: config.webhook_enabled,
     }))
 }
