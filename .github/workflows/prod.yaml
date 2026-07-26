@@ -103,6 +103,12 @@ jobs:
     needs: [build-backend, build-frontend, build-gateway]
     runs-on: ubuntu-24.04
     steps:
+      # Must come first: checkout cleans the workspace, which would delete the
+      # downloaded artifacts. Needed for the files the deploy ships straight
+      # from the repo rather than from a build - migrations and the pm2
+      # process definitions.
+      - uses: actions/checkout@v4
+
       - uses: actions/download-artifact@v4
         with:
           name: backend-binaries
@@ -142,11 +148,27 @@ jobs:
           rsync -az --delete -e "ssh -i ~/.ssh/deploy_key" gateway-dist/ \
             "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:/tmp/channel-gateway-new/"
 
+      # The migration step below runs against the host's own checkout, which
+      # nothing here ever updated - so a migration added in this commit would
+      # not exist on the host and would silently never be applied. Ship the
+      # migrations (and the pm2 process definitions) explicitly.
+      - name: Copy migrations and process definitions
+        run: |
+          rsync -az --delete -e "ssh -i ~/.ssh/deploy_key" livestack-backend/store/migrations/ \
+            "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:/tmp/migrations-new/"
+          scp -i ~/.ssh/deploy_key livestack-backend/ecosystem.config.js \
+            "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:/tmp/ecosystem.config.js"
+
       - name: Run migrations and restart services
         run: |
           ssh -i ~/.ssh/deploy_key "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" '
             set -e
             source "$HOME/.cargo/env"
+
+            rsync -a --delete /tmp/migrations-new/ \
+              '"${{ env.DEPLOY_PATH }}"'/livestack-backend/store/migrations/
+            rm -rf /tmp/migrations-new
+
             cd '"${{ env.DEPLOY_PATH }}"'/livestack-backend/store
             diesel migration run --database-url "$(grep DATABASE_URL ../.env | cut -d= -f2-)"
 
@@ -169,12 +191,6 @@ jobs:
             # binary replacement above
             sudo setcap cap_net_raw+ep '"${{ env.DEPLOY_PATH }}"'/livestack-backend/target/release/api
 
-            pm2 reload api
-            pm2 reload producer
-            pm2 reload consumer
-            pm2 reload webhook-worker
-            pm2 reload email-worker || true
-
             # channel-gateway/.env lives only on the server (TELEGRAM_BOT_TOKEN,
             # INTERNAL_API_SECRET) and is never touched here - only dist/ and
             # the package files are replaced.
@@ -188,7 +204,15 @@ jobs:
             cd '"${{ env.DEPLOY_PATH }}"'/channel-gateway
             npm install --omit=dev
 
-            pm2 describe channel-gateway > /dev/null 2>&1 \
-              && pm2 reload channel-gateway \
-              || pm2 start dist/index.js --name channel-gateway --cwd '"${{ env.DEPLOY_PATH }}"'/channel-gateway
+            # Every service in one command, after all of their artifacts are in
+            # place. startOrReload starts anything that is not running yet -
+            # reloading by name only ever touched processes that already
+            # existed, which is how email-worker stayed permanently down.
+            cp /tmp/ecosystem.config.js '"${{ env.DEPLOY_PATH }}"'/livestack-backend/ecosystem.config.js
+            rm -f /tmp/ecosystem.config.js
+            pm2 startOrReload '"${{ env.DEPLOY_PATH }}"'/livestack-backend/ecosystem.config.js --update-env
+
+            # Persist the process list so a host reboot brings back everything
+            # that is meant to be running, not just what was saved years ago.
+            pm2 save
           '
