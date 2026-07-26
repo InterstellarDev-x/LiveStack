@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react"
-import { Link, useNavigate } from "react-router"
+import { Link, useNavigate, useSearchParams } from "react-router"
 import { Activity, ArrowRight, CheckCircle2, Gauge, LockKeyhole, RadioTower } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -15,6 +15,11 @@ export default function SigninPage() {
 
   const { login } = useAuth()
   const navigate = useNavigate()
+  // Signup redirects here with ?registered=1 after creating an account. That
+  // flag was never read, so a successful signup landed on a plain sign-in form
+  // with no sign anything had happened.
+  const [searchParams] = useSearchParams()
+  const justRegistered = searchParams.get("registered") === "1"
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault()
@@ -63,6 +68,12 @@ export default function SigninPage() {
                   LiveStack workspace.
                 </p>
               </div>
+
+              {justRegistered && !error && (
+                <p className="mt-6 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-700 dark:text-emerald-400">
+                  Account created. Sign in to continue.
+                </p>
+              )}
 
               <form onSubmit={handleSubmit} className="mt-8 space-y-4">
                 <div className="space-y-1.5">

@@ -50,7 +50,12 @@ export default function IntegrationsPage() {
     }
   }
 
-  async function handleUnlink(id: string) {
+  async function handleUnlink(id: string, channel: string) {
+    const label = CHANNEL_LABELS[channel] ?? channel
+    if (!window.confirm(`Unlink this ${label} chat? It stops being able to reach the assistant.`)) {
+      return
+    }
+
     setRemovingId(id)
     setError(null)
     try {
@@ -118,7 +123,7 @@ export default function IntegrationsPage() {
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => handleUnlink(link.id)}
+                  onClick={() => handleUnlink(link.id, link.channel)}
                   disabled={removingId === link.id}
                 >
                   <Trash2 className="size-4" />

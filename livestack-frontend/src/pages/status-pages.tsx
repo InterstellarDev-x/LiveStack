@@ -49,7 +49,11 @@ export default function StatusPagesPage() {
     }
   }
 
-  async function handleDelete(statusPageId: string) {
+  async function handleDelete(statusPageId: string, pageTitle: string) {
+    if (!window.confirm(`Delete the "${pageTitle}" status page? Its public URL stops working.`)) {
+      return
+    }
+
     setPages((current) => current.filter((page) => page.id !== statusPageId))
     try {
       await api.delete<StatusPageActionOutput>(`/status-pages/${statusPageId}`)
@@ -144,7 +148,7 @@ export default function StatusPagesPage() {
                   <Button variant="ghost" size="icon" aria-label={`View ${page.title}`} render={<a href={`/status/${page.slug}`} target="_blank" rel="noreferrer" />}>
                     <ExternalLink className="size-4" />
                   </Button>
-                  <Button variant="ghost" size="icon" aria-label={`Delete ${page.title}`} onClick={() => handleDelete(page.id)}>
+                  <Button variant="ghost" size="icon" aria-label={`Delete ${page.title}`} onClick={() => handleDelete(page.id, page.title)}>
                     <Trash2 className="size-4" />
                   </Button>
                 </div>

@@ -4,7 +4,7 @@ import { Activity, ArrowRight, Plus, RadioTower, Trash2 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { api } from "@/lib/api"
+import { ApiError, api } from "@/lib/api"
 import { formatDateTime } from "@/lib/utils"
 import type { CreateWebsiteOutput, Website, WebsitesByUserOutput } from "@/types/api"
 
@@ -36,18 +36,31 @@ export default function MonitorsPage() {
   async function handleCreate(event: FormEvent) {
     event.preventDefault()
     setCreating(true)
+    setError(null)
     try {
       await api.post<CreateWebsiteOutput>("/website", { url })
       setUrl("")
       await loadWebsites()
-    } catch {
-      setError("Couldn't add that monitor. Please try again.")
+    } catch (err) {
+      // The server rejects unparseable URLs and internal hosts; say which,
+      // rather than making the user guess at "please try again".
+      setError(
+        err instanceof ApiError && err.status === 400
+          ? "That doesn't look like a monitorable URL. Use a public http:// or https:// address."
+          : "Couldn't add that monitor. Please try again.",
+      )
     } finally {
       setCreating(false)
     }
   }
 
-  async function handleDelete(websiteId: string) {
+  async function handleDelete(websiteId: string, siteUrl: string) {
+    if (
+      !window.confirm(`Delete the monitor for ${siteUrl}? Its check and incident history goes too.`)
+    ) {
+      return
+    }
+
     setWebsites((current) => current.filter((site) => site.id !== websiteId))
     try {
       await api.delete(`/website/${websiteId}`)
@@ -150,7 +163,7 @@ export default function MonitorsPage() {
                     variant="ghost"
                     size="icon"
                     aria-label={`Delete ${site.url}`}
-                    onClick={() => handleDelete(site.id)}
+                    onClick={() => handleDelete(site.id, site.url)}
                   >
                     <Trash2 className="size-4" />
                   </Button>

@@ -1,6 +1,14 @@
-import { getToken } from "@/lib/token"
+import { clearToken, getToken } from "@/lib/token"
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "/api"
+
+/**
+ * Endpoints where a 401 is the answer to the question being asked ("are these
+ * credentials right?") rather than a sign the session has expired. Everywhere
+ * else, a 401 means the token is gone or stale and the user needs to sign in
+ * again.
+ */
+const AUTH_PATHS = ["/signin", "/signup"]
 
 export class ApiError extends Error {
   status: number
@@ -9,6 +17,38 @@ export class ApiError extends Error {
     super(message)
     this.status = status
   }
+}
+
+/**
+ * Tokens expire (10 hours), and nothing on the client watches for that. Left
+ * alone, every page just renders its generic "Couldn't load..." error forever
+ * while the user sits on a signed-in-looking app. Drop the dead token and send
+ * them to sign-in instead.
+ */
+function handleExpiredSession(path: string) {
+  if (AUTH_PATHS.includes(path) || !getToken()) return
+
+  clearToken()
+  // A full navigation, not a router push: this can fire from anywhere,
+  // including outside a component, and it should clear all in-memory state.
+  window.location.assign("/signin")
+}
+
+/** Parses a response body, tolerating handlers that return no content. */
+async function parseBody<T>(res: Response): Promise<T> {
+  if (res.status === 204) {
+    return undefined as T
+  }
+
+  // Some handlers (e.g. DELETE /channels/links/:id) answer 200 with an empty
+  // body. Calling res.json() on that throws, which used to surface as a
+  // failure for an operation that had actually succeeded.
+  const text = await res.text()
+  if (text.trim() === "") {
+    return undefined as T
+  }
+
+  return JSON.parse(text) as T
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -24,14 +64,13 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   })
 
   if (!res.ok) {
+    if (res.status === 401) {
+      handleExpiredSession(path)
+    }
     throw new ApiError(res.status, `Request to ${path} failed with ${res.status}`)
   }
 
-  if (res.status === 204) {
-    return undefined as T
-  }
-
-  return (await res.json()) as T
+  return parseBody<T>(res)
 }
 
 /**

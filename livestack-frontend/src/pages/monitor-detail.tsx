@@ -20,7 +20,9 @@ export default function MonitorDetailPage() {
   const [ticks, setTicks] = useState<WebsiteTicksOutput["ticks"]>([])
   const [incidents, setIncidents] = useState<WebsiteIncidentsOutput["incidents"]>([])
   const [loading, setLoading] = useState(true)
+  const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!websiteId) return
@@ -41,9 +43,27 @@ export default function MonitorDetailPage() {
   }, [websiteId])
 
   async function handleDelete() {
-    if (!websiteId) return
-    await api.delete(`/website/${websiteId}`)
-    navigate("/monitors", { replace: true })
+    if (!websiteId || deleting) return
+    if (
+      !window.confirm(
+        `Delete the monitor for ${site?.url ?? "this site"}? Its check and incident history is deleted with it.`,
+      )
+    ) {
+      return
+    }
+
+    setDeleting(true)
+    try {
+      await api.delete(`/website/${websiteId}`)
+      navigate("/monitors", { replace: true })
+    } catch {
+      // Previously this threw into an unhandled rejection: the page stayed
+      // put with no explanation, or navigated away as if it had worked.
+      // Kept separate from `error`, which means "this monitor failed to
+      // load" and replaces the whole page.
+      setDeleteError("Couldn't delete this monitor. Please try again.")
+      setDeleting(false)
+    }
   }
 
   if (loading) {
@@ -81,10 +101,13 @@ export default function MonitorDetailPage() {
               Added {formatDateTime(site.time_added)}
             </p>
           </div>
-          <Button variant="outline" onClick={handleDelete}>
-            <Trash2 className="size-4" />
-            Delete monitor
-          </Button>
+          <div className="flex flex-col items-start gap-2">
+            <Button variant="outline" onClick={handleDelete} disabled={deleting}>
+              <Trash2 className="size-4" />
+              {deleting ? "Deleting..." : "Delete monitor"}
+            </Button>
+            {deleteError && <p className="text-sm text-destructive">{deleteError}</p>}
+          </div>
         </div>
 
         {tick ? (

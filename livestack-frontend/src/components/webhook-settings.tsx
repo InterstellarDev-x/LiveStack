@@ -3,7 +3,7 @@ import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
-import { api } from "@/lib/api"
+import { ApiError, api } from "@/lib/api"
 import type { SetWebsiteWebhookOutput, WebsiteWebhookConfig } from "@/types/api"
 
 function maskSecret(secret: string) {
@@ -43,13 +43,19 @@ export function WebhookSettings({ websiteId }: { websiteId: string }) {
         webhook_url: urlDraft.trim() === "" ? null : urlDraft.trim(),
         webhook_enabled: enabledDraft,
       })
-      setConfig((prev) => ({
+      setConfig({
         webhook_url: result.webhook_url,
         webhook_enabled: result.webhook_enabled,
-        webhook_secret: prev?.webhook_secret ?? result.webhook_secret ?? null,
-      }))
-    } catch {
-      setError("Couldn't save webhook settings.")
+        // The server generates the secret on the first save, so prefer what it
+        // just returned; fall back to what we already had on later saves.
+        webhook_secret: result.webhook_secret ?? null,
+      })
+    } catch (err) {
+      setError(
+        err instanceof ApiError && err.status === 400
+          ? "That webhook URL isn't valid. Use a full http:// or https:// URL on a public host."
+          : "Couldn't save webhook settings.",
+      )
     } finally {
       setSaving(false)
     }

@@ -74,8 +74,11 @@ export default function PublicStatusPage() {
         <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4">
           <h2 className="text-sm font-semibold text-destructive">Active incident</h2>
           <ul className="mt-2 space-y-1 text-sm">
-            {openIncidents.map((incident) => (
-              <li key={`${incident.display_name}-${incident.started_at}`}>
+            {/* Display names aren't unique — nothing stops two monitors on a
+                page sharing one — so the position in the list is the only
+                key that's actually distinct. */}
+            {openIncidents.map((incident, i) => (
+              <li key={i}>
                 <span className="font-medium">{incident.display_name}</span>
                 <span className="text-muted-foreground">
                   {" "}
@@ -90,8 +93,8 @@ export default function PublicStatusPage() {
 
       {page.monitors.length > 0 && (
         <ul className="divide-y divide-border rounded-lg border">
-          {page.monitors.map((monitor) => (
-            <li key={monitor.display_name} className="flex items-center justify-between gap-4 p-4">
+          {page.monitors.map((monitor, i) => (
+            <li key={i} className="flex items-center justify-between gap-4 p-4">
               <div className="flex items-center gap-2">
                 <StatusBadge status={monitor.status} />
                 <span className="text-sm font-medium">{monitor.display_name}</span>
@@ -121,9 +124,9 @@ export default function PublicStatusPage() {
             Past incidents (last 30 days)
           </h2>
           <ul className="divide-y divide-border rounded-lg border">
-            {pastIncidents.map((incident) => (
+            {pastIncidents.map((incident, i) => (
               <li
-                key={`${incident.display_name}-${incident.started_at}`}
+                key={i}
                 className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 py-3 text-sm"
               >
                 <div>
