@@ -14,6 +14,17 @@ pub fn jwt_secret() -> &'static [u8] {
         .as_bytes()
 }
 
+/// Shared secret for service-to-service routes (e.g. the Telegram gateway
+/// calling `/internal/*`), read once from the environment. `main` verifies
+/// INTERNAL_API_SECRET is set at startup, so the expect here cannot fire at
+/// runtime.
+pub fn internal_secret() -> &'static str {
+    static SECRET: OnceLock<String> = OnceLock::new();
+    SECRET.get_or_init(|| {
+        std::env::var("INTERNAL_API_SECRET").expect("INTERNAL_API_SECRET must be set")
+    })
+}
+
 /// Hash a password with Argon2id and a random salt.
 pub fn hash_password(password: &str) -> Result<String, argon2::password_hash::Error> {
     let salt = SaltString::generate(&mut OsRng);

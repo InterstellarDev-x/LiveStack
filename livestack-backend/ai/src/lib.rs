@@ -128,7 +128,9 @@ impl std::error::Error for AiError {}
 /// Tool-call budget per user turn (resets whenever new user input arrives).
 /// The assistant never mutates anything, so this only bounds data gathering.
 const MAX_TOOL_ROUNDS: usize = 6;
-const MAX_HISTORY_MESSAGES: usize = 40;
+/// Public so channel integrations (which persist their own history between
+/// messages) can cap it the same way this crate does internally.
+pub const MAX_HISTORY_MESSAGES: usize = 40;
 
 fn model_name() -> String {
     std::env::var("OPENAI_MODEL").unwrap_or_else(|_| "gpt-4o".to_string())
@@ -177,7 +179,21 @@ pub async fn run_chat(
 ) -> Result<String, AiError> {
     let (steer_tx, steer_rx) = mpsc::unbounded_channel();
     drop(steer_tx); // no live steering in one-shot mode
-    run_agent(pool, user_id, history, Vec::new(), steer_rx, None).await
+    run_agent(pool, user_id, history, Vec::new(), steer_rx, None, false).await
+}
+
+/// Same as [`run_chat`], but for channels (e.g. a linked Telegram chat)
+/// where the pairing step is already the trust boundary: mutating tools
+/// execute immediately instead of pausing for a `ConfirmationRequired`
+/// round-trip, since there's no UI to show that prompt in.
+pub async fn run_chat_direct(
+    pool: &DbPool,
+    user_id: &str,
+    history: Vec<ChatMessage>,
+) -> Result<String, AiError> {
+    let (steer_tx, steer_rx) = mpsc::unbounded_channel();
+    drop(steer_tx); // no live steering in one-shot mode
+    run_agent(pool, user_id, history, Vec::new(), steer_rx, None, true).await
 }
 
 /// Same as [`run_chat`], but reports [`AgentEvent`]s as the loop works —
@@ -202,13 +218,17 @@ pub async fn run_chat_streaming(
         confirmed_actions,
         steer_rx,
         Some(events),
+        false,
     )
     .await
 }
 
 /// Full agent loop. `inbox` carries steering and follow-up user messages;
-/// `events` (optional) receives progress for a UI. Returns the last settled
-/// reply once the inbox closes.
+/// `events` (optional) receives progress for a UI. `skip_confirmation`
+/// bypasses the `ConfirmationRequired` pause for mutating tools — only set
+/// for callers (like a linked chat channel) that have no UI to show that
+/// prompt in and treat their own auth boundary as sufficient. Returns the
+/// last settled reply once the inbox closes.
 pub async fn run_agent(
     pool: &DbPool,
     user_id: &str,
@@ -216,6 +236,7 @@ pub async fn run_agent(
     confirmed_actions: Vec<PendingAction>,
     mut inbox: mpsc::UnboundedReceiver<ChatMessage>,
     events: Option<mpsc::UnboundedSender<AgentEvent>>,
+    skip_confirmation: bool,
 ) -> Result<String, AiError> {
     if history.is_empty() {
         return Err(AiError::BadInput("empty message history".into()));
@@ -360,9 +381,10 @@ pub async fn run_agent(
             // alongside it. Nothing here has executed yet, so there's no
             // partial-execution state to reconcile: the model just re-asks
             // for whatever it still needs on the next turn.
-            if tool_calls
-                .iter()
-                .any(|call| tools::requires_confirmation(&call.function.name))
+            if !skip_confirmation
+                && tool_calls
+                    .iter()
+                    .any(|call| tools::requires_confirmation(&call.function.name))
             {
                 let mut actions = Vec::with_capacity(tool_calls.len());
                 for call in &tool_calls {

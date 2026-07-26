@@ -79,6 +79,17 @@ export interface UpdateEmailAlertsOutput {
   email_alerts_enabled: boolean
 }
 
+export interface ChannelLink {
+  id: string
+  channel: string
+  channel_user_id: string
+  created_at: string
+}
+
+export interface ChannelLinksOutput {
+  links: ChannelLink[]
+}
+
 export interface StatusPage {
   id: string
   slug: string

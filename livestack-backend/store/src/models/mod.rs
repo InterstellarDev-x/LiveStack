@@ -1,3 +1,4 @@
+pub mod channel_link;
 pub mod incident;
 pub mod notification;
 pub mod status_page;

@@ -187,3 +187,29 @@ pub struct UserIncidentOutput {
 pub struct UserIncidentsOutput {
     pub incidents: Vec<UserIncidentOutput>,
 }
+
+/// Worker-facing: tells the gateway whether it can call `/internal/ai/reply`
+/// yet, or needs to show `pairing_code` to the chat and wait.
+#[derive(Serialize, Deserialize)]
+pub struct ResolveChannelLinkOutput {
+    pub linked: bool,
+    pub pairing_code: Option<String>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct ChannelAiReplyOutput {
+    pub reply: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct ChannelLinkOutput {
+    pub id: String,
+    pub channel: String,
+    pub channel_user_id: String,
+    pub created_at: NaiveDateTime,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct ChannelLinksOutput {
+    pub links: Vec<ChannelLinkOutput>,
+}

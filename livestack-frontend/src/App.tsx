@@ -9,6 +9,7 @@ import { ProtectedRoute } from './components/protected-route'
 import AssistantPage from './pages/assistant'
 import EscalationPoliciesPage from './pages/escalation-policies'
 import IncidentsPage from './pages/incidents'
+import IntegrationsPage from './pages/integrations'
 import LandingPage from './pages/landing'
 import MonitorDetailPage from './pages/monitor-detail'
 import MonitorsPage from './pages/monitors'
@@ -38,6 +39,7 @@ function App() {
           <Route path="status-pages/:statusPageId" element={<StatusPageDetailPage />} />
           <Route path="assistant" element={<AssistantPage />} />
           <Route path="network-tools" element={<NetworkToolsPage />} />
+          <Route path="integrations" element={<IntegrationsPage />} />
           <Route path="settings" element={<SettingsPage />} />
         </Route>
       </Route>

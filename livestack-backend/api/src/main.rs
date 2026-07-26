@@ -3,7 +3,12 @@ use store::Store;
 
 use crate::{
     middleware::auth::log,
+    middleware::internal::internal_auth,
     routes::ai::chat as ai_chat,
+    routes::channels::{
+        channel_ai_reply, delete_channel_link, link_channel, list_channel_links,
+        resolve_channel_link,
+    },
     routes::incident::{get_user_incidents, get_website_incidents},
     routes::network_trace::network_trace,
     routes::status_page::{
@@ -29,6 +34,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // fail fast so we never run with a missing signing key
     if std::env::var("JWT_SECRET").is_err() {
         return Err("JWT_SECRET must be set (e.g. in a .env file)".into());
+    }
+    if std::env::var("INTERNAL_API_SECRET").is_err() {
+        return Err("INTERNAL_API_SECRET must be set (e.g. in a .env file)".into());
     }
 
     let store_pool =
@@ -59,6 +67,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .at("/incidents", get(get_user_incidents).around(log))
         .at("/ai/chat", post(ai_chat).around(log))
+        .at(
+            "/internal/channel-link/resolve",
+            post(resolve_channel_link).around(internal_auth),
+        )
+        .at(
+            "/internal/ai/reply",
+            post(channel_ai_reply).around(internal_auth),
+        )
+        .at("/channels/link", post(link_channel).around(log))
+        .at(
+            "/channels/links",
+            get(list_channel_links).around(log),
+        )
+        .at(
+            "/channels/links/:link_id",
+            delete(delete_channel_link).around(log),
+        )
         .at("/network-trace", post(network_trace).around(log))
         .at(
             "/website/:website_id/webhook",

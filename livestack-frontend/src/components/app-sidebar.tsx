@@ -1,5 +1,5 @@
 import { NavLink, useLocation } from "react-router"
-import { Activity, Globe, Radar, Settings, ShieldCheck, Siren, Sparkles, Workflow } from "lucide-react"
+import { Activity, Globe, Plug, Radar, Settings, ShieldCheck, Siren, Sparkles, Workflow } from "lucide-react"
 
 import {
   Sidebar,
@@ -20,6 +20,7 @@ const navItems = [
   { title: "Status Pages", url: "/status-pages", icon: Globe },
   { title: "Network Tools", url: "/network-tools", icon: Radar },
   { title: "AI Assistant", url: "/assistant", icon: Sparkles },
+  { title: "Integrations", url: "/integrations", icon: Plug },
   { title: "Settings", url: "/settings", icon: Settings },
 ]
 

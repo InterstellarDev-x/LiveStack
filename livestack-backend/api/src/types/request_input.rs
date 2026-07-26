@@ -80,3 +80,21 @@ pub struct NetworkTraceInput {
     /// A bare host or a full URL; only the host is used.
     pub target: String,
 }
+
+#[derive(Serialize, Deserialize)]
+pub struct ResolveChannelLinkInput {
+    pub channel: String,
+    pub channel_user_id: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct ChannelAiReplyInput {
+    pub channel: String,
+    pub channel_user_id: String,
+    pub message: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct LinkChannelInput {
+    pub pairing_code: String,
+}

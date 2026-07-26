@@ -7,6 +7,19 @@ pub mod sql_types {
 }
 
 diesel::table! {
+    channel_link (id) {
+        id -> Text,
+        channel -> Text,
+        channel_user_id -> Text,
+        user_id -> Nullable<Text>,
+        pairing_code -> Text,
+        history -> Text,
+        created_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     incident (id) {
         id -> Text,
         website_id -> Text,
@@ -93,6 +106,7 @@ diesel::table! {
     }
 }
 
+diesel::joinable!(channel_link -> user (user_id));
 diesel::joinable!(incident -> website (website_id));
 diesel::joinable!(status_page -> user (user_id));
 diesel::joinable!(status_page_monitor -> status_page (status_page_id));
@@ -103,6 +117,7 @@ diesel::joinable!(website_tick -> region (region_id));
 diesel::joinable!(website_tick -> website (website_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
+    channel_link,
     incident,
     region,
     status_page,

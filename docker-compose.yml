@@ -49,6 +49,7 @@ services:
     environment:
       DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:-mysecretpassword}@postgres:5432/better-uptime
       JWT_SECRET: ${JWT_SECRET:-change-me}
+      INTERNAL_API_SECRET: ${INTERNAL_API_SECRET:-change-me}
       REDIS_URL: redis://redis:6379/
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o}
@@ -119,6 +120,16 @@ services:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
+
+  channel-gateway:
+    build:
+      context: ./channel-gateway
+    environment:
+      API_BASE_URL: http://api:3000
+      INTERNAL_API_SECRET: ${INTERNAL_API_SECRET:-change-me}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+    depends_on:
+      - api
 
   frontend:
     build:
