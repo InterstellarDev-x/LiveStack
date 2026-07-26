@@ -46,6 +46,7 @@ pub struct WebsiteTick {
 }
 
 /// Per-phase curl timings for a single website check, in whole milliseconds.
+#[derive(Clone, Copy)]
 pub struct NewWebsiteTickTiming {
     pub dns_time_ms: i32,
     pub connection_time_ms: i32,
@@ -163,6 +164,9 @@ impl Store {
         return Ok(updated_site);
     }
 
+    /// Ordered oldest-first. Without an explicit order Postgres is free to
+    /// return rows in any order, which in practice means the monitor list
+    /// reshuffles after an update moves a row.
     pub fn get_websites_by_user_id(
         &mut self,
         input_user_id: String,
@@ -170,6 +174,7 @@ impl Store {
         use crate::schema::website::dsl::*;
         let response = website
             .filter(user_id.eq(input_user_id))
+            .order(time_added.asc())
             .load::<Website>(self.conn())?;
         return Ok(response);
     }
@@ -231,6 +236,37 @@ impl Store {
             .select(WebsiteTick::as_select())
             .first(self.conn())
             .optional()
+    }
+
+    /// `(total, up)` tick counts at or after `since`, computed in the
+    /// database.
+    ///
+    /// The public status page needs three of these (24h/7d/30d) per published
+    /// monitor and nothing else about the rows. Loading a 30-day window into
+    /// memory to count it means transferring thousands of rows per monitor on
+    /// every anonymous page view; two aggregates over an index do not.
+    pub fn count_ticks_since(
+        &mut self,
+        input_website_id: &str,
+        since: NaiveDateTime,
+    ) -> Result<(i64, i64), diesel::result::Error> {
+        use crate::schema::website_tick::dsl::*;
+        use diesel::dsl::count_star;
+
+        let total: i64 = website_tick
+            .filter(website_id.eq(input_website_id))
+            .filter(createdAt.ge(since))
+            .select(count_star())
+            .first(self.conn())?;
+
+        let up: i64 = website_tick
+            .filter(website_id.eq(input_website_id))
+            .filter(createdAt.ge(since))
+            .filter(status.eq(WebsiteStatusEnum::Up))
+            .select(count_star())
+            .first(self.conn())?;
+
+        Ok((total, up))
     }
 
     /// All ticks at or after `since` - the caller buckets these into

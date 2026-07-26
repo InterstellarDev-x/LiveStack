@@ -4,7 +4,7 @@ use hmac::{Hmac, Mac};
 use messaging::config::{AlertMessage, StreamService};
 use serde::Serialize;
 use sha2::Sha256;
-use store::Store;
+use store::{DbPool, Store};
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -19,6 +19,9 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 /// StreamService::claim_alert_records_with_deadletter.
 const MAX_DELIVERY_ATTEMPTS: usize = 5;
 const SIGNATURE_HEADER: &str = "X-LiveStack-Signature";
+/// Backoff after an infrastructure error so a Redis outage doesn't become a
+/// hot retry loop.
+const ERROR_BACKOFF: Duration = Duration::from_secs(5);
 
 #[derive(Serialize)]
 struct WebhookPayload<'a> {
@@ -53,7 +56,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .timeout(REQUEST_TIMEOUT)
         .build()?;
 
-    let mut store = Store::default()?;
+    // See `Store::worker_pool`: re-validated on checkout, so a Postgres
+    // restart doesn't silently stop webhook delivery.
+    let pool = Store::worker_pool();
 
     println!("webhook-worker {consumer_name} listening on group {CONSUMER_GROUP}");
 
@@ -69,13 +74,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 READ_BLOCK_MILLIS,
             )
         })
-        .await??;
+        .await?;
+
+        // Transient Redis failures are logged and retried, never fatal:
+        // unacked alerts stay in the PEL until it recovers.
+        let messages = match messages {
+            Ok(messages) => messages,
+            Err(err) => {
+                eprintln!("webhook-worker failed to read alerts: {err}");
+                tokio::time::sleep(ERROR_BACKOFF).await;
+                continue;
+            }
+        };
 
         let messages = if messages.is_empty() {
             let stream_clone = Arc::clone(&stream);
             let consumer_name_clone = consumer_name.clone();
 
-            tokio::task::spawn_blocking(move || {
+            match tokio::task::spawn_blocking(move || {
                 stream_clone.claim_alert_records_with_deadletter(
                     CONSUMER_GROUP,
                     &consumer_name_clone,
@@ -84,7 +100,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     MAX_DELIVERY_ATTEMPTS,
                 )
             })
-            .await??
+            .await?
+            {
+                Ok(messages) => messages,
+                Err(err) => {
+                    eprintln!("webhook-worker failed to reclaim pending alerts: {err}");
+                    tokio::time::sleep(ERROR_BACKOFF).await;
+                    continue;
+                }
+            }
         } else {
             messages
         };
@@ -96,7 +120,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut processed_ids = Vec::new();
 
         for message in messages {
-            match handle_alert(&mut store, &client, &message).await {
+            match handle_alert(&pool, &client, &message).await {
                 Ok(()) => processed_ids.push(message.stream_id),
                 // Left unacked: PEL reclaim retries it, up to MAX_DELIVERY_ATTEMPTS.
                 Err(err) => eprintln!(
@@ -106,16 +130,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
-        stream.ack_alert_records(CONSUMER_GROUP, &processed_ids)?;
+        if let Err(err) = stream.ack_alert_records(CONSUMER_GROUP, &processed_ids) {
+            eprintln!(
+                "webhook-worker failed to ack {} alerts: {err}",
+                processed_ids.len()
+            );
+            continue;
+        }
         println!("delivered {} webhook alerts", processed_ids.len());
     }
 }
 
 async fn handle_alert(
-    store: &mut Store,
+    pool: &DbPool,
     client: &reqwest::Client,
     alert: &AlertMessage,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let mut store = Store::from_pool(pool)?;
+
     let Some(config) = store.get_notification_config(&alert.website_id)? else {
         return Ok(()); // no config for this website - nothing to deliver
     };

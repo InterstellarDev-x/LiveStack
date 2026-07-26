@@ -6,12 +6,16 @@ use std::ops::{Deref, DerefMut};
 pub mod config;
 pub mod models;
 pub mod schema;
+pub mod url_guard;
 
 pub use diesel::result::DatabaseErrorKind;
 pub use diesel::result::Error as DbError;
 
 pub type DbPool = Pool<ConnectionManager<PgConnection>>;
 pub type DbConnection = PooledConnection<ConnectionManager<PgConnection>>;
+
+const API_POOL_SIZE: u32 = 20;
+const WORKER_POOL_SIZE: u32 = 4;
 
 pub enum StoreConnection {
     Direct(PgConnection),
@@ -48,11 +52,37 @@ impl Store {
         &mut self.conn
     }
 
+    /// Pool for the API process, which serves many requests concurrently.
+    /// Built eagerly: a database that isn't reachable at startup is a
+    /// configuration problem worth failing loudly on.
     pub fn pool() -> Result<DbPool, PoolError> {
         let config = Config::default();
         let manager = ConnectionManager::<PgConnection>::new(config.db_url);
 
-        Pool::builder().max_size(20).build(manager)
+        Pool::builder().max_size(API_POOL_SIZE).build(manager)
+    }
+
+    /// Pool for the background workers (producer, consumer, notifiers).
+    ///
+    /// Two deliberate differences from [`Store::pool`]:
+    ///
+    /// - **Lazy.** Connections are opened on first use, so a worker started
+    ///   while Postgres is still coming up boots anyway instead of exiting.
+    /// - **Small.** Each worker handles one message at a time, and Postgres'
+    ///   `max_connections` (100 by default) is shared across *every* process;
+    ///   giving each worker an API-sized pool is what exhausts it.
+    ///
+    /// Either way, r2d2 validates a connection when it's checked out and
+    /// replaces dead ones — which is what a long-lived single `PgConnection`
+    /// could never do. A worker that lost its connection to Postgres used to
+    /// stay broken until someone restarted it.
+    pub fn worker_pool() -> DbPool {
+        let config = Config::default();
+        let manager = ConnectionManager::<PgConnection>::new(config.db_url);
+
+        Pool::builder()
+            .max_size(WORKER_POOL_SIZE)
+            .build_unchecked(manager)
     }
 
     pub fn from_pool(pool: &DbPool) -> Result<Self, PoolError> {

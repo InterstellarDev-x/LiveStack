@@ -3,7 +3,7 @@ use std::{env, sync::Arc, time::Duration};
 use curl::easy::Easy;
 use messaging::config::{AlertStatus, StreamService, WebsiteCheckMessage};
 use store::{
-    Store,
+    DbPool, Store,
     models::{
         incident::Incident,
         website::{NewWebsiteTickTiming, WebsiteStatusEnum},
@@ -18,6 +18,9 @@ const CLAIM_MIN_IDLE_MILLIS: usize = 5000;
 const DEFAULT_REGION_ID: &str = "india";
 const DEFAULT_REGION_NAME: &str = "India";
 const CHECK_TIMEOUT: Duration = Duration::from_secs(10);
+/// Backoff after an infrastructure error (Redis unreachable, etc.) so a
+/// prolonged outage doesn't turn into a hot retry loop.
+const ERROR_BACKOFF: Duration = Duration::from_secs(5);
 /// Consecutive failed checks required before an incident opens (and the down
 /// alert fires). One curl blip never pages anyone; the cost is one extra
 /// check interval of alert latency.
@@ -36,8 +39,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let region_id = env::var("REGION_ID").unwrap_or_else(|_| DEFAULT_REGION_ID.to_string());
     let region_name = env::var("REGION_NAME").unwrap_or_else(|_| DEFAULT_REGION_NAME.to_string());
 
-    let mut store = Store::default()?;
-    store.ensure_region(region_id.clone(), region_name)?;
+    // Pooled rather than a single connection held for the process' lifetime,
+    // so losing the connection to Postgres costs one batch instead of
+    // permanently stopping every uptime check. See `Store::worker_pool`.
+    let pool = Store::worker_pool();
+    Store::from_pool(&pool)?.ensure_region(region_id.clone(), region_name)?;
 
     println!("consumer {consumer_name} listening on group {CONSUMER_GROUP}");
 
@@ -53,13 +59,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 READ_BLOCK_MILLIS,
             )
         })
-        .await??;
+        .await?;
+
+        // Redis being briefly unreachable is a transient condition, not a
+        // reason to exit: unacked messages stay in the PEL and are picked up
+        // again once it recovers.
+        let messages = match messages {
+            Ok(messages) => messages,
+            Err(err) => {
+                eprintln!("consumer failed to read from the check stream: {err}");
+                tokio::time::sleep(ERROR_BACKOFF).await;
+                continue;
+            }
+        };
 
         let messages = if messages.is_empty() {
             let stream_clone = Arc::clone(&stream);
             let consumer_name_clone = consumer_name.clone();
 
-            tokio::task::spawn_blocking(move || {
+            match tokio::task::spawn_blocking(move || {
                 stream_clone.claim_pending_records(
                     CONSUMER_GROUP,
                     &consumer_name_clone,
@@ -67,7 +85,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     READ_BATCH_SIZE,
                 )
             })
-            .await??
+            .await?
+            {
+                Ok(messages) => messages,
+                Err(err) => {
+                    eprintln!("consumer failed to reclaim pending checks: {err}");
+                    tokio::time::sleep(ERROR_BACKOFF).await;
+                    continue;
+                }
+            }
         } else {
             messages
         };
@@ -81,52 +107,78 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         for message in messages {
             let region_id = region_id.clone();
             // curl::easy::Easy is a blocking API, so the check runs on a blocking thread.
-            let tick =
-                tokio::task::spawn_blocking(move || check_website(&message, &region_id)).await?;
-
-            let WebsiteCheck {
-                stream_id,
-                website_id,
-                url,
-                region_id,
-                response_time_ms,
-                status,
-                cause,
-                timing,
-            } = tick;
-
-            store.create_website_tick(
-                website_id.clone(),
-                region_id.clone(),
-                response_time_ms,
-                status,
-                timing,
-            )?;
-            processed_ids.push(stream_id);
-
-            if let Some((alert_status, incident, downtime_seconds)) =
-                run_incident_state_machine(&mut store, &website_id, status, &cause)?
+            let check = match tokio::task::spawn_blocking(move || {
+                check_website(&message, &region_id)
+            })
+            .await
             {
-                // Best-effort: a Redis hiccup on the alert stream shouldn't
-                // fail the whole batch or block acking the check message.
-                if let Err(err) = stream.publish_alert(
-                    &website_id,
-                    &url,
-                    alert_status,
-                    &region_id,
-                    response_time_ms,
-                    &incident.id,
-                    &incident.cause,
-                    downtime_seconds,
-                ) {
-                    eprintln!("failed to publish alert for {website_id}: {err}");
+                Ok(check) => check,
+                // A panicking check would otherwise take the process down and
+                // the message would be redelivered into the same panic.
+                Err(err) => {
+                    eprintln!("consumer check task failed: {err}");
+                    continue;
+                }
+            };
+
+            let website_id = check.website_id.clone();
+            let stream_id = check.stream_id.clone();
+
+            match record_check(&pool, &check) {
+                Ok(alert) => {
+                    processed_ids.push(stream_id);
+
+                    if let Some((alert_status, incident, downtime_seconds)) = alert {
+                        // Best-effort: a Redis hiccup on the alert stream shouldn't
+                        // fail the whole batch or block acking the check message.
+                        if let Err(err) = stream.publish_alert(
+                            &check.website_id,
+                            &check.url,
+                            alert_status,
+                            &check.region_id,
+                            check.response_time_ms,
+                            &incident.id,
+                            &incident.cause,
+                            downtime_seconds,
+                        ) {
+                            eprintln!("failed to publish alert for {website_id}: {err}");
+                        }
+                    }
+                }
+                // Left unacked on purpose: the PEL reclaim path retries this
+                // one check later, rather than one bad row killing the
+                // consumer and every other site's checks with it.
+                Err(err) => {
+                    eprintln!("consumer failed to record check for {website_id}: {err}")
                 }
             }
         }
 
-        stream.ack_records(CONSUMER_GROUP, &processed_ids)?;
+        if let Err(err) = stream.ack_records(CONSUMER_GROUP, &processed_ids) {
+            eprintln!("consumer failed to ack {} checks: {err}", processed_ids.len());
+            continue;
+        }
         println!("processed {} website checks", processed_ids.len());
     }
+}
+
+/// Persists one completed check and advances that website's incident state.
+/// Returns the transition to alert on, if this check caused one.
+fn record_check(
+    pool: &DbPool,
+    check: &WebsiteCheck,
+) -> Result<Option<(AlertStatus, Incident, Option<i64>)>, Box<dyn std::error::Error>> {
+    let mut store = Store::from_pool(pool)?;
+
+    store.create_website_tick(
+        check.website_id.clone(),
+        check.region_id.clone(),
+        check.response_time_ms,
+        check.status,
+        check.timing,
+    )?;
+
+    run_incident_state_machine(&mut store, &check.website_id, check.status, &check.cause)
 }
 
 struct WebsiteCheck {

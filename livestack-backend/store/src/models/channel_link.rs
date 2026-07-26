@@ -24,6 +24,11 @@ fn new_pairing_code() -> String {
     Uuid::new_v4().simple().to_string()[..6].to_uppercase()
 }
 
+/// Pairing codes are 6 characters, so collisions are rare but not negligible.
+/// The unique index turns one into a failed insert, which is retryable —
+/// nobody involved did anything wrong.
+const PAIRING_CODE_ATTEMPTS: usize = 5;
+
 impl Store {
     /// Worker-facing, no owner check: called by the channel gateway before a
     /// sender is known to be linked to anyone. Returns the existing row if
@@ -36,32 +41,51 @@ impl Store {
     ) -> Result<ChannelLink, diesel::result::Error> {
         use crate::schema::channel_link::dsl::*;
 
-        if let Some(existing) = channel_link
-            .filter(channel.eq(input_channel))
-            .filter(channel_user_id.eq(input_channel_user_id))
-            .select(ChannelLink::as_select())
-            .first(self.conn())
-            .optional()?
-        {
-            return Ok(existing);
+        let mut last_conflict = None;
+
+        for _ in 0..PAIRING_CODE_ATTEMPTS {
+            if let Some(existing) = channel_link
+                .filter(channel.eq(input_channel))
+                .filter(channel_user_id.eq(input_channel_user_id))
+                .select(ChannelLink::as_select())
+                .first(self.conn())
+                .optional()?
+            {
+                return Ok(existing);
+            }
+
+            let now = Utc::now().naive_utc();
+            let new_link = ChannelLink {
+                id: Uuid::new_v4().to_string(),
+                channel: input_channel.to_string(),
+                channel_user_id: input_channel_user_id.to_string(),
+                user_id: None,
+                pairing_code: new_pairing_code(),
+                history: "[]".to_string(),
+                created_at: now,
+                updated_at: now,
+            };
+
+            match diesel::insert_into(channel_link)
+                .values(&new_link)
+                .returning(ChannelLink::as_returning())
+                .get_result(self.conn())
+            {
+                Ok(link) => return Ok(link),
+                // Either this chat raced another message from itself (the
+                // loop's re-select above picks up the winner) or the generated
+                // code collided with an existing one (a fresh code fixes it).
+                Err(err @ diesel::result::Error::DatabaseError(
+                    diesel::result::DatabaseErrorKind::UniqueViolation,
+                    _,
+                )) => last_conflict = Some(err),
+                Err(err) => return Err(err),
+            }
         }
 
-        let now = Utc::now().naive_utc();
-        let new_link = ChannelLink {
-            id: Uuid::new_v4().to_string(),
-            channel: input_channel.to_string(),
-            channel_user_id: input_channel_user_id.to_string(),
-            user_id: None,
-            pairing_code: new_pairing_code(),
-            history: "[]".to_string(),
-            created_at: now,
-            updated_at: now,
-        };
-
-        diesel::insert_into(channel_link)
-            .values(&new_link)
-            .returning(ChannelLink::as_returning())
-            .get_result(self.conn())
+        // Every attempt collided, which realistically means something else is
+        // wrong; surface the database's own error rather than inventing one.
+        Err(last_conflict.unwrap_or(diesel::result::Error::NotFound))
     }
 
     /// Owner-facing: called with the JWT-authenticated user_id from the

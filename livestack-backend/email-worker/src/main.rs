@@ -5,7 +5,7 @@ use lettre::{
     transport::smtp::authentication::Credentials,
 };
 use messaging::config::{AlertMessage, AlertStatus, StreamService};
-use store::Store;
+use store::{DbPool, Store};
 
 const DEFAULT_REDIS_URL: &str = "redis://127.0.0.1/";
 const CONSUMER_GROUP: &str = "email-notifiers";
@@ -13,6 +13,9 @@ const READ_BATCH_SIZE: usize = 10;
 const READ_BLOCK_MILLIS: usize = 5000;
 const CLAIM_MIN_IDLE_MILLIS: usize = 5000;
 const SEND_TIMEOUT: Duration = Duration::from_secs(10);
+/// Backoff after an infrastructure error so a Redis outage doesn't become a
+/// hot retry loop.
+const ERROR_BACKOFF: Duration = Duration::from_secs(5);
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -26,9 +29,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or_else(|_| format!("email-worker-{}", std::process::id()));
 
     let mailer = build_mailer()?;
-    let from_address = env::var("SMTP_FROM").expect("SMTP_FROM must be set");
+    let from_address = required_env("SMTP_FROM")?;
 
-    let mut store = Store::default()?;
+    // See `Store::worker_pool`: a pooled connection is re-validated on
+    // checkout, so a Postgres restart doesn't silently stop alert emails.
+    let pool = Store::worker_pool();
 
     println!("email-worker {consumer_name} listening on group {CONSUMER_GROUP}");
 
@@ -44,13 +49,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 READ_BLOCK_MILLIS,
             )
         })
-        .await??;
+        .await?;
+
+        // Transient Redis failures are logged and retried, never fatal:
+        // unacked alerts stay in the PEL until it recovers.
+        let messages = match messages {
+            Ok(messages) => messages,
+            Err(err) => {
+                eprintln!("email-worker failed to read alerts: {err}");
+                tokio::time::sleep(ERROR_BACKOFF).await;
+                continue;
+            }
+        };
 
         let messages = if messages.is_empty() {
             let stream_clone = Arc::clone(&stream);
             let consumer_name_clone = consumer_name.clone();
 
-            tokio::task::spawn_blocking(move || {
+            match tokio::task::spawn_blocking(move || {
                 stream_clone.claim_alert_records(
                     CONSUMER_GROUP,
                     &consumer_name_clone,
@@ -58,7 +74,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     READ_BATCH_SIZE,
                 )
             })
-            .await??
+            .await?
+            {
+                Ok(messages) => messages,
+                Err(err) => {
+                    eprintln!("email-worker failed to reclaim pending alerts: {err}");
+                    tokio::time::sleep(ERROR_BACKOFF).await;
+                    continue;
+                }
+            }
         } else {
             messages
         };
@@ -70,7 +94,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut processed_ids = Vec::new();
 
         for message in messages {
-            match handle_alert(&mut store, &mailer, &from_address, &message).await {
+            match handle_alert(&pool, &mailer, &from_address, &message).await {
                 Ok(()) => processed_ids.push(message.stream_id),
                 // Left unacked: PEL reclaim will retry it after CLAIM_MIN_IDLE_MILLIS.
                 Err(err) => eprintln!(
@@ -80,15 +104,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
-        stream.ack_alert_records(CONSUMER_GROUP, &processed_ids)?;
+        if let Err(err) = stream.ack_alert_records(CONSUMER_GROUP, &processed_ids) {
+            eprintln!("email-worker failed to ack {} alerts: {err}", processed_ids.len());
+            continue;
+        }
         println!("emailed {} alerts", processed_ids.len());
     }
 }
 
+/// A missing SMTP setting is a configuration problem, not a bug: say which
+/// variable is missing and what it disables, instead of panicking with a
+/// backtrace that buries the one useful word.
+fn required_env(name: &str) -> Result<String, String> {
+    env::var(name).map_err(|_| {
+        format!(
+            "{name} is not set, so email alerts cannot be delivered. \
+             Set SMTP_HOST, SMTP_USER, SMTP_PASS and SMTP_FROM in \
+             livestack-backend/.env (see .env.example) and restart this worker."
+        )
+    })
+}
+
 fn build_mailer() -> Result<AsyncSmtpTransport<Tokio1Executor>, Box<dyn std::error::Error>> {
-    let host = env::var("SMTP_HOST").expect("SMTP_HOST must be set");
-    let username = env::var("SMTP_USER").expect("SMTP_USER must be set");
-    let password = env::var("SMTP_PASS").expect("SMTP_PASS must be set");
+    let host = required_env("SMTP_HOST")?;
+    let username = required_env("SMTP_USER")?;
+    let password = required_env("SMTP_PASS")?;
 
     let creds = Credentials::new(username, password);
 
@@ -101,12 +141,20 @@ fn build_mailer() -> Result<AsyncSmtpTransport<Tokio1Executor>, Box<dyn std::err
 }
 
 async fn handle_alert(
-    store: &mut Store,
+    pool: &DbPool,
     mailer: &AsyncSmtpTransport<Tokio1Executor>,
     from_address: &str,
     alert: &AlertMessage,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let owner_id = store.get_website_owner_user_id(&alert.website_id)?;
+    let mut store = Store::from_pool(pool)?;
+
+    // The website (or its owner) can be deleted between the alert being
+    // published and this worker reading it. That's nothing to send, not a
+    // failure — treating it as one left the alert unacked and redelivered
+    // forever, since this consumer group has no dead-letter path.
+    let Some(owner_id) = store.get_website_owner_user_id(&alert.website_id)? else {
+        return Ok(());
+    };
     let Some(to_address) = store.get_user_email(&owner_id)? else {
         return Ok(()); // no email on file yet - nothing to send, not a failure
     };

@@ -2416,6 +2416,7 @@ dependencies = [
  "openssl-sys",
  "pq-sys",
  "serde",
+ "url",
  "uuid",
 ]
 

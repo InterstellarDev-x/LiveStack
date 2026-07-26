@@ -73,6 +73,8 @@ impl Store {
             .get_result(self.conn())
     }
 
+    /// Newest first, so the list has a stable order across reloads rather
+    /// than whatever order Postgres happens to return rows in.
     pub fn get_status_pages_by_user(
         &mut self,
         input_user_id: &str,
@@ -81,6 +83,7 @@ impl Store {
 
         status_page
             .filter(user_id.eq(input_user_id))
+            .order(created_at.desc())
             .select(StatusPage::as_select())
             .load(self.conn())
     }

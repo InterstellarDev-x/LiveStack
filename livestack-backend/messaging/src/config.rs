@@ -128,9 +128,11 @@ impl StreamService {
         Ok(())
     }
 
+    /// Check-queue group, created from the start of the stream: replaying a
+    /// queued check just re-checks a site, which is harmless.
     pub fn ensure_consumer_group(&self, group_name: &str) -> RedisResult<()> {
         let mut con = self.get_conn()?;
-        ensure_consumer_group_on(&mut con, BETTERUPTIME, group_name)
+        ensure_consumer_group_on(&mut con, BETTERUPTIME, group_name, FROM_STREAM_START)
     }
 
     pub fn read_group_records(
@@ -243,9 +245,16 @@ impl StreamService {
         )
     }
 
+    /// Alert group, created from the *end* of the stream.
+    ///
+    /// Unlike a check, an alert is a notification: replaying one emails or
+    /// POSTs a customer about an outage that is long over. A group created at
+    /// the start of the stream would do exactly that on its first run, for
+    /// every alert still retained (up to a thousand). Only a brand-new group
+    /// is affected — an existing one keeps its own position.
     pub fn ensure_alert_consumer_group(&self, group_name: &str) -> RedisResult<()> {
         let mut con = self.get_conn()?;
-        ensure_consumer_group_on(&mut con, WEBSITE_ALERTS, group_name)
+        ensure_consumer_group_on(&mut con, WEBSITE_ALERTS, group_name, FROM_NEW_MESSAGES_ONLY)
     }
 
     pub fn read_alert_records(
@@ -377,12 +386,18 @@ impl StreamService {
     }
 }
 
+/// Deliver everything still retained in the stream to a newly created group.
+const FROM_STREAM_START: &str = "0";
+/// Deliver only messages added after the group was created.
+const FROM_NEW_MESSAGES_ONLY: &str = "$";
+
 fn ensure_consumer_group_on(
     con: &mut redis::Connection,
     stream_key: &str,
     group_name: &str,
+    start_id: &str,
 ) -> RedisResult<()> {
-    let created: RedisResult<()> = con.xgroup_create_mkstream(stream_key, group_name, "0");
+    let created: RedisResult<()> = con.xgroup_create_mkstream(stream_key, group_name, start_id);
 
     match created {
         Ok(()) => Ok(()),

@@ -85,19 +85,24 @@ impl Store {
 
     /// Used by notification workers, which act on behalf of the system
     /// rather than an authenticated user, so there is no owner check here.
-    /// Returns `None` if the user has no email or has turned email alerts off.
+    /// Returns `None` if the user no longer exists, has no email, or has
+    /// turned email alerts off — all "nothing to send", not errors.
     pub fn get_user_email(
         &mut self,
         input_user_id: &str,
     ) -> Result<Option<String>, diesel::result::Error> {
         use crate::schema::user::dsl::*;
 
-        let (user_email, alerts_enabled): (Option<String>, bool) = user
+        let row: Option<(Option<String>, bool)> = user
             .filter(id.eq(input_user_id))
             .select((email, email_alerts_enabled))
-            .first(self.conn())?;
+            .first(self.conn())
+            .optional()?;
 
-        Ok(if alerts_enabled { user_email } else { None })
+        Ok(match row {
+            Some((user_email, true)) => user_email,
+            _ => None,
+        })
     }
 
     pub fn get_user_by_id(

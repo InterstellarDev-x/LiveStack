@@ -123,15 +123,18 @@ impl Store {
 
     /// Used by notification workers to resolve who owns a website so its
     /// email alert can be routed, without requiring a caller-supplied user_id.
+    /// `None` means the website was deleted after its alert was published,
+    /// which callers treat as "nothing to notify" rather than an error.
     pub fn get_website_owner_user_id(
         &mut self,
         input_website_id: &str,
-    ) -> Result<String, diesel::result::Error> {
+    ) -> Result<Option<String>, diesel::result::Error> {
         use crate::schema::website::dsl::*;
 
         website
             .filter(id.eq(input_website_id))
             .select(user_id)
             .first(self.conn())
+            .optional()
     }
 }
